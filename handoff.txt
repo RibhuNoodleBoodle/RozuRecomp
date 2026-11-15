@@ -1,0 +1,96 @@
+================================================================================
+RULE OF ROSE (PS2, SLUS-21448) — PS2RECOMP CONTINUITY & STATE HANDOFF LEDGER
+================================================================================
+Last Updated By: Gemini Argon (High Reasoning) — Systems Architect & Research Lead
+Timestamp: 2026-11-15T19:25:00+05:30
+Project Status: ARCHITECTURE & RESEARCH COMPLETE — READY FOR FLASH MILESTONE M00
+Next Milestone to Run: M00 (`gemini_flash/Gemini_Step_00_Inventory_And_Baseline.txt`)
+
+--------------------------------------------------------------------------------
+1. REPOSITORY & UPSTREAM BASELINE
+--------------------------------------------------------------------------------
+- Repository Root: `/mnt/6421-8598/building/RozuRecomp`
+- Active Branch: `main`
+- Fork Remote (`origin`): `https://github.com/RibhuNoodleBoodle/RozuRecomp`
+- Upstream Repository: `https://github.com/ran-j/PS2Recomp.git`
+- Upstream & Initial Baseline Commit SHA: `e5636981a1c9de368f6b71e819c3dc188dfedbf4`
+  (`GIF: treat FLG=3 like IMAGE everywhere a GIFtag is parsed (#384)`, 2026-10-23;
+  verified identical to live `ran-j/PS2Recomp` `refs/heads/main`).
+- Argon Research Commit SHA: `54aa8c3ab4a45b6c5864c02201d6b644920fc3e1`
+  (`docs(research): establish Rule of Rose feasibility baseline`)
+- Argon Architecture & Flash Prompts Commit SHA: `02b3817959a8a2250f5b93ba614eb971bd79357e`
+  (`docs(architecture): define PS2Recomp milestones and Flash work orders`)
+
+--------------------------------------------------------------------------------
+2. VERIFIED HOST HARDWARE, OS, & STORAGE PROFILE
+--------------------------------------------------------------------------------
+- OS / Kernel: Ubuntu 26.04.1 LTS (Resolute Raccoon), Linux `7.0.0-43-generic x86_64`
+- CPU: `Intel(R) Core(TM) i5-7200U CPU @ 2.50GHz` (Kaby Lake-U, 2 cores / 4 threads,
+  max turbo 3.10 GHz, 3 MiB L3, `sse4_1`, `sse4_2`, `avx`, `avx2`, `fma`, `bmi1`, `bmi2`)
+- GPU: `Intel(R) HD Graphics 620 (KBL GT2)` (`8086:5916`), kernel driver `i915`,
+  Mesa `26.0.8-1ubuntu0.3`, OpenGL `4.6`, GLES `3.2`, Vulkan `1.4.335`, unified DDR4 RAM
+- Memory & Swap: `15 GiB` total RAM (`~9.8 GiB` available), **`0 B` Swap (`Swap: 0B`)**
+  -> **CRITICAL**: Always cap C++ builds at `ninja -j2` and use 32-64 unity batches
+     (`single_file_output = false`) to avoid Linux OOM kills!
+- Disk Space:
+  * `/` (`/dev/sdb3`): `59 GiB` total, **`1.1 GiB` free (99% full)** -> **NEVER USE `/tmp`!**
+  * `/mnt/6421-8598` (`/dev/sda2`): `354 GiB` total, **`245 GiB` free (32% used)**
+  -> **MANDATORY**: Always `export TMPDIR=/mnt/6421-8598/building/RozuRecomp/out/tmp`
+     and keep all builds/extracts inside `/mnt/6421-8598/building/RozuRecomp/out/`.
+- Toolchain: `gcc`/`g++` `15.2.0`, `cmake` `4.2.3`, `ninja` `1.13.2`, `python3` `3.14.4`,
+  `openjdk` `25.0.5`, `7z` `26.00`, `isoinfo`, `xorriso` `1.5.6`.
+  * Note: `/usr/bin/ffmpeg` and `/usr/lib/x86_64-linux-gnu/libavcodec.so.62.11.100`
+    are installed, but `libav*-dev` pkg-config `.pc` files are missing on `/`.
+    Use `-DPS2X_ENABLE_FFMPEG=OFF` in M01-M06, and stage `libav*-dev` in
+    `out/deps/ffmpeg` in M07.
+
+--------------------------------------------------------------------------------
+3. VERIFIED GAME DISC & EXECUTABLE IDENTITY
+--------------------------------------------------------------------------------
+- ISO Path: `/mnt/6421-8598/building/RozuRecomp/Rule of Rose (USA).iso`
+- ISO Size: `3,393,454,080` bytes (`1,656,960` sectors × `2,048` bytes)
+- ISO SHA-256: `95ff5d1298b1bb19443098852c95c42886605f01fb1ffa8d823ff496598989e9`
+- Title ID / Region / Version: `SLUS-21448` / `NTSC-U` (America, English) / `VER = 1.00`
+- Boot Executable: `cdrom0:\SLUS_214.48;1`
+  * File Size: `2,296,472` bytes
+  * SHA-256: `262efe713ad2432d4e8b2122a5edae9302b7f9eb900537b76beae064a4a91af3`
+  * SHA-1: `f9abd6dc53070750dfcae3b44184fb9852e603fb`
+  * CRC32: `0x8cf7b024`
+  * Entry Point: `0x00100008` (`GP = 0x0030FF70`)
+  * `PT_LOAD[0]`: Offset `0x001000`, VirtAddr `0x00100000`, FileSiz `0x195eb8`, MemSiz `0x195ed0` (`R E`)
+  * `PT_LOAD[1]`: Offset `0x196f00`, VirtAddr `0x00295f00`, FileSiz `0x0720fc`, MemSiz `0x592f94` (`RW`, `.bss` ends `0x00828e94`)
+  * Overlays on Disc: **ZERO** secondary `.ELF`/`.OVL`/`.REL` code overlays (`ELFR101` files inside `.RPK` are bytecode interpreted by `CSequenceCode::update` at `0x001AE7C8`).
+- Key Architectural Discoveries in `SLUS_214.48`:
+  1. **`.vutext` Hazard (`[0x00291230, 0x002953B0)`)**: Section `[1406] .vutext` (`16,768` B, 44 `.DVP.overlay` VU1 microprograms) has `SHF_EXECINSTR` set. Must be excluded in `ElfParser::isExecutableSection()` (`M02`).
+  2. **Symbol Coverage (`~8,963` Functions)**: `1,449` `.gnu.linkonce.t.*` sections (`0x00280E88`–`0x0029122C`, `0x002953B0`–`0x00295EB8`) + `284` `.gnu.linkonce.d._vt$*` vtables (`0x002E0A80`–`0x002E5300`) + `.ctors` (`0x002E014C`) + `648` Sony SDK/Newlib/libgcc2 functions (`0x0024B490`–`0x00280E88`) + `~6,866` `.text` game functions (`0x00100000`–`0x0024B490`).
+  3. **30 FPS Frame Pacing (`MagSystem`, `0x00117654`)**: Uses `512x448` (`PSMCT32`, `PSMZ16S` `ZGEQUAL`, `FBP=0x00`/`0x70`, `ZBP=0xE0`) and `512x384` (`setDisplay384`), `sceGsSyncVCallback(vsyncHandler)` (`m_v_rate = 2` -> `29.97 FPS`), `*T0_COUNT` (`0x10000000`), and `sceDmaSend`/`sceDmaSync` on VIF1 channel 1.
+  4. **Controller (`BedPad`, `0x00101AEC`–`0x00102488`)**: Uses `libpad2` + `libdbc` + `libvib` (`sceDbcInit` `0x0026FC88`, `scePad2Init` `0x0026DF00`, `scePad2CreateSocket` `0x0026E168`, `scePad2Read` `0x0026E3C0`, `scePad2GetState` `0x0026E4B0`, `sceVibSetActParam` `0x002705A8`), NOT legacy `libpad`.
+
+--------------------------------------------------------------------------------
+4. MILESTONE TRACKER (M00 - M12)
+--------------------------------------------------------------------------------
+| ID  | Status | Commit SHA | Prompt File | Summary |
+| --- | ------ | ---------- | ----------- | ------- |
+| M00 | TODO   | -          | `gemini_flash/Gemini_Step_00_Inventory_And_Baseline.txt` | Harden `.gitignore` (`*.iso`, `SLUS_*`, `*.IRX`), extract ISO to `out/disc/`, verify hashes |
+| M01 | TODO   | -          | `gemini_flash/Gemini_Step_01_Upstream_Toolchain_And_Tests.txt` | Build upstream tools/runtime in `out/build/baseline` (`-DPS2X_ENABLE_FFMPEG=OFF`), pass `ctest` |
+| M02 | TODO   | -          | `gemini_flash/Gemini_Step_02_Ghidra_And_Function_Map.txt` | Exclude `.vutext` in `ElfParser`, generate `config/slus_21448.toml` (`~8,963` functions) |
+| M03 | TODO   | -          | `gemini_flash/Gemini_Step_03_Static_Recompilation_Integration.txt` | Run `ps2xRecomp`, batch into 64 unity `.cpp` files, compile & link runner (`< 6 GiB` RSS) |
+| M04 | TODO   | -          | `gemini_flash/Gemini_Step_04_Runtime_Boot_And_Dispatch.txt` | Register `0x8cf7b024` overrides, wire `T0_COUNT` & `sceGsSyncVCallback`, boot into `MagSystem::run` |
+| M05 | TODO   | -          | `gemini_flash/Gemini_Step_05_IOP_IRX_CDVD_And_RPC.txt` | Load `IOPCONF.CNF` & 8 `.IRX` modules, case-insensitive CDVD/VFS lookup for `.RPK` archives |
+| M06 | TODO   | -          | `gemini_flash/Gemini_Step_06_GS_VU_Graphics.txt` | VIF1/GIF DMA sync, 44 `.vutext` VU1 overlays, `512x448`/`512x384` logo & title frame renders |
+| M07 | TODO   | -          | `gemini_flash/Gemini_Step_07_Movies_And_Audio.txt` | Stage FFmpeg in `out/deps/` for `MOVIE/*.PSS`, enable `LIBSD.IRX` + `RXSNDDRV.IRX` `.STR` audio |
+| M08 | TODO   | -          | `gemini_flash/Gemini_Step_08_Input_Menu_And_Saves.txt` | Implement `scePad2*`/`sceDbc*`/`sceVib*` in `Pad.cpp` for `BedPad`, verify `mc0` saves |
+| M09 | TODO   | -          | `gemini_flash/Gemini_Step_09_First_Playable_Gameplay.txt` | Start New Game, execute `ELFR101` scripts (`0x001AE7C8`), reach Stage 01 3D gameplay |
+| M10 | TODO   | -          | `gemini_flash/Gemini_Step_10_Sustained_Gameplay_Testing.txt` | 30-minute (`54,000`-frame) soak across room transitions, menus, AI, and save/load |
+| M11 | TODO   | -          | `gemini_flash/Gemini_Step_11_Intel_HD620_Optimization.txt` | 30 Hz `UploadFrame` gating + SIMD `GSCpuBackend`, verify `<= 33.4 ms` median frame time on HD 620 |
+| M12 | TODO   | -          | `gemini_flash/Gemini_Step_12_Packaging_And_Regression.txt` | Full regression script `tools/run_rozu_regression.py`, Git cleanliness audit, final handoff |
+
+--------------------------------------------------------------------------------
+5. RECOVERY & CONTINUATION INSTRUCTIONS FOR NEXT SESSION
+--------------------------------------------------------------------------------
+1. To start or resume implementation in a fresh Gemini Flash session, paste the
+   entire contents of the next `TODO` prompt file listed above (starting with
+   `gemini_flash/Gemini_Step_00_Inventory_And_Baseline.txt`).
+2. If any build, recompilation, or runtime step fails, paste
+   `gemini_flash/Gemini_Recovery_And_Debugging.txt` along with the failing log.
+================================================================================
