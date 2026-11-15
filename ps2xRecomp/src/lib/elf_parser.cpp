@@ -1698,8 +1698,9 @@ namespace ps2recomp
         // names from EE function discovery and recompilation.
         const std::string name = section->get_name();
         const bool vuText = name == ".vutext" || name.rfind(".vutext.", 0) == 0;
-        const bool dvpOverlay = name == ".DVP.overlay" || name.rfind(".DVP.overlay.", 0) == 0;
-        return !vuText && !dvpOverlay;
+        const bool vuData = name == ".vudata" || name.rfind(".vudata.", 0) == 0;
+        const bool dvpSection = name == ".DVP" || name.rfind(".DVP.", 0) == 0;
+        return !vuText && !vuData && !dvpSection;
     }
 
     bool ElfParser::isDataSection(const ELFIO::section *section) const
@@ -2407,6 +2408,51 @@ namespace ps2recomp
                     m_symbols.push_back(symbol);
                 }
             }
+        }
+
+        // Retail PS2 C++ binaries stripped of .symtab often retain named
+        // .gnu.linkonce.t.<mangled> ELF section headers for inline/template methods.
+        std::unordered_set<uint32_t> existingSymbolAddrs;
+        existingSymbolAddrs.reserve(m_symbols.size());
+        for (const auto &symbol : m_symbols)
+        {
+            if (symbol.isFunction && !symbol.isImported && symbol.address != 0)
+            {
+                existingSymbolAddrs.insert(symbol.address);
+            }
+        }
+
+        constexpr const char kLinkonceTextPrefix[] = ".gnu.linkonce.t.";
+        constexpr size_t kLinkonceTextPrefixLen = sizeof(kLinkonceTextPrefix) - 1;
+        for (const auto &section : m_sections)
+        {
+            if (!section.isCode || section.size == 0 || section.address == 0)
+            {
+                continue;
+            }
+            if (section.name.rfind(kLinkonceTextPrefix, 0) != 0)
+            {
+                continue;
+            }
+            if (!existingSymbolAddrs.insert(section.address).second)
+            {
+                continue;
+            }
+
+            std::string symName = section.name.substr(kLinkonceTextPrefixLen);
+            if (symName.empty())
+            {
+                symName = section.name;
+            }
+
+            Symbol symbol;
+            symbol.name = std::move(symName);
+            symbol.address = section.address;
+            symbol.size = section.size;
+            symbol.isFunction = true;
+            symbol.isImported = false;
+            symbol.isExported = true;
+            m_symbols.push_back(std::move(symbol));
         }
     }
 

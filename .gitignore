@@ -33,6 +33,8 @@ android/.gradle/
 *.CUE
 SLUS_*
 slus_*
+!config/slus_*.toml
+!config/slus_*.csv
 SCUS_*
 SLES_*
 SLPS_*

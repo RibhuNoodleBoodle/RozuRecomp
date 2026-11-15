@@ -181,6 +181,27 @@ static bool writeMinimalMipsElfWithVuMicroprogramSection(const std::filesystem::
     const std::array<uint32_t, 4> vuWords{0x01EC48BDu, 0u, 0x01FA717Du, 0u};
     vuText->set_data(reinterpret_cast<const char *>(vuWords.data()), sizeof(vuWords));
 
+    ELFIO::section *vuData = writer.sections.add(".vudata");
+    vuData->set_type(ELFIO::SHT_PROGBITS);
+    vuData->set_flags(ELFIO::SHF_ALLOC | ELFIO::SHF_EXECINSTR);
+    vuData->set_addr_align(16);
+    vuData->set_address(0x00251000u);
+    vuData->set_data(reinterpret_cast<const char *>(vuWords.data()), sizeof(vuWords));
+
+    ELFIO::section *dvpOverlay = writer.sections.add(".DVP.overlay..0");
+    dvpOverlay->set_type(ELFIO::SHT_PROGBITS);
+    dvpOverlay->set_flags(ELFIO::SHF_ALLOC | ELFIO::SHF_EXECINSTR);
+    dvpOverlay->set_addr_align(8);
+    dvpOverlay->set_address(0x00252000u);
+    dvpOverlay->set_data(reinterpret_cast<const char *>(vuWords.data()), sizeof(vuWords));
+
+    ELFIO::section *linkonceText = writer.sections.add(".gnu.linkonce.t._._9MagSystem");
+    linkonceText->set_type(ELFIO::SHT_PROGBITS);
+    linkonceText->set_flags(ELFIO::SHF_ALLOC | ELFIO::SHF_EXECINSTR);
+    linkonceText->set_addr_align(4);
+    linkonceText->set_address(0x00260000u);
+    linkonceText->set_data(reinterpret_cast<const char *>(textWords.data()), sizeof(textWords));
+
     ELFIO::section *strtab = writer.sections.add(".strtab");
     strtab->set_type(ELFIO::SHT_STRTAB);
     strtab->set_addr_align(1);
@@ -211,6 +232,12 @@ static bool writeMinimalMipsElfWithVuMicroprogramSection(const std::filesystem::
     vuSegment->set_flags(ELFIO::PF_R | ELFIO::PF_X);
     vuSegment->set_align(0x1000);
     vuSegment->add_section_index(vuText->get_index(), vuText->get_addr_align());
+
+    ELFIO::segment *linkonceSegment = writer.segments.add();
+    linkonceSegment->set_type(ELFIO::PT_LOAD);
+    linkonceSegment->set_flags(ELFIO::PF_R | ELFIO::PF_X);
+    linkonceSegment->set_align(0x1000);
+    linkonceSegment->add_section_index(linkonceText->get_index(), linkonceText->get_addr_align());
 
     return writer.save(elfPath.string());
 }
@@ -1572,11 +1599,41 @@ void register_ps2_recompiler_tests()
                 if (vuSection != sections.end())
                     t.IsFalse(vuSection->isCode, ".vutext must not be decoded as R5900 code");
 
+                const auto vuDataSection = std::find_if(sections.begin(), sections.end(),
+                                                        [](const Section &section)
+                                                        { return section.name == ".vudata"; });
+                t.IsTrue(vuDataSection != sections.end(), ".vudata section should remain present");
+                if (vuDataSection != sections.end())
+                    t.IsFalse(vuDataSection->isCode, ".vudata must not be marked as R5900 code");
+
+                const auto dvpSection = std::find_if(sections.begin(), sections.end(),
+                                                     [](const Section &section)
+                                                     { return section.name == ".DVP.overlay..0"; });
+                t.IsTrue(dvpSection != sections.end(), ".DVP.overlay..0 section should remain present");
+                if (dvpSection != sections.end())
+                    t.IsFalse(dvpSection->isCode, ".DVP.* overlay must not be marked as R5900 code");
+
                 const auto functions = parser.extractFunctions();
                 const bool hasVuFunction = std::any_of(functions.begin(), functions.end(),
                                                        [](const Function &function)
-                                                       { return function.start == 0x00250000u; });
-                t.IsFalse(hasVuFunction, "VU symbol must not become an EE function");
+                                                       {
+                                                           return function.start == 0x00250000u ||
+                                                                  function.start == 0x00251000u ||
+                                                                  function.start == 0x00252000u;
+                                                       });
+                t.IsFalse(hasVuFunction, "VU/DVP symbols must not become EE functions");
+
+                const auto linkonceFunc = std::find_if(functions.begin(), functions.end(),
+                                                       [](const Function &function)
+                                                       { return function.start == 0x00260000u; });
+                t.IsTrue(linkonceFunc != functions.end(), ".gnu.linkonce.t.* section should register without .symtab");
+                if (linkonceFunc != functions.end())
+                {
+                    t.Equals(linkonceFunc->name, std::string("_._9MagSystem"),
+                             ".gnu.linkonce.t.* should keep demangled suffix");
+                    t.Equals(linkonceFunc->end, 0x00260008u,
+                             ".gnu.linkonce.t.* end should match section size");
+                }
             }
 
             std::error_code removeError;
