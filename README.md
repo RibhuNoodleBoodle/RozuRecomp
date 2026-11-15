@@ -1,4 +1,51 @@
-## PS2Recomp: PlayStation 2 Static Recompiler (Experimental)
+# RozuRecomp — Rule of Rose (`SLUS-21448`) Static Recompilation
+
+> [!NOTE]
+> **Status (`2026-11-15`):** In progress — **Milestones M00–M03 complete**, **Milestone M04 (`WIP`)** actively booting `SLUS_214.48` with all 8 IOP `.IRX` modules loaded and GS/DMAC init active.
+> Target release: **Rule of Rose (USA, `SLUS-21448`, `VER = 1.00`, CRC32 `0x8cf7b024`)**, built on [`ran-j/PS2Recomp`](https://github.com/ran-j/PS2Recomp) (`e5636981a1c9de368f6b71e819c3dc188dfedbf4`).
+
+---
+
+## Project Progress
+
+### Milestone Overview
+
+| ID | Milestone | Status | Commit SHA | Notes |
+| --- | --- | --- | --- | --- |
+| M00 | Inventory & Baseline | **DONE** | `ee43bbaf45eebdc49a9de33e4f0bde39b3b9f119` | Hardened `.gitignore`, extracted retail ISO (`2,145` files) to `out/disc/`, verified `SLUS_214.48` (`2,296,472` bytes, SHA-256 `262efe713ad2432d4e8b2122a5edae9302b7f9eb900537b76beae064a4a91af3`, CRC32 `0x8cf7b024`). |
+| M01 | Upstream Toolchain & Tests | **DONE** | `9a7990313cad693e3ba3e424012626ad8928fd22` | Built `ps2xAnalyzer`, `ps2xRecomp`, `ps2xIOP`, `ps2xRuntime`, and `ps2xTest` in `out/build/baseline` (`-DPS2X_ENABLE_FFMPEG=OFF`, `-msse4.1` for GCC 15 `x86_64`); `45/45` `ctest` + `446/446` `ps2x_tests` (`491/491`) passing. |
+| M02 | Function Map & `.vutext` Exclusion | **DONE** | `6ad9152f95c05da221197f70aed4914da5be13e2` | Excluded `.vutext` (`[0x00291230, 0x002953B0)`) / `.vudata` / `.DVP.*` in `ElfParser`, synthesized `.gnu.linkonce.t.*` boundaries, and generated `config/slus_21448.{csv,toml}` via `tools/generate_slus21448_toml.py`: `8,983` functions (`7,534` `.text` + `1,449` `.gnu.linkonce.t.*`, `228` stubs, `439` entries, `171` jump tables); `491/491` tests passing. |
+| M03 | Static Recompilation Integration | **DONE** | `737466feda6602d45f4377e875f4bc9ca16f20f5` | Recompiled `8,983` functions (`0` unhandled, `0` errors) into `out/recomp/`, integrated `64`-batch unity compilation (`PS2X_RECOMP_OUTPUT_DIR`) into `ps2xRuntime/CMakeLists.txt`, and linked `38M` `ps2EntryRunner` (`889.6s`, `1.59 GiB` peak RSS); `491/491` tests passing. |
+| M04 | Runtime Boot & Dispatch | **WIP** | *Uncommitted working tree* | Booting `SLUS_214.48` cleanly from `0x100008` through SIF RPC, all 8 IOP `.IRX` modules, GS register init, and DMAC sends (`vsyncTicks=120`, `missingFunction=0`); currently resolving Thread 1 vs sound Thread 4 scheduling/priority starvation and function-split generator rules. |
+| M05 | IOP IRX, CDVD & RPC | **TODO** | - | `bedInitSystem` (`0x001005E0`) full disc / case-insensitive CDVD VFS & `.RPK` loading. |
+| M06 | GS & VU Graphics | **TODO** | - | VIF1/GIF DMA sync, 44 `.vutext` `.DVP.overlay` VU1 uploads, `512x448` / `512x384` boot logos & title screen. |
+| M07 | Movies & Audio | **TODO** | - | `MOVIE/*.PSS` MPEG-2 playback (staging FFmpeg headers in `out/deps/`) and `LIBSD.IRX` / `RXSNDDRV.IRX` `.STR` streaming. |
+| M08 | Input, Menu & Saves | **TODO** | - | `libpad2` / `libdbc` / `libvib` handlers for `BedPad` (`0x00101AEC`) and `mc0` (`BASLUS-21448*`) save/load. |
+| M09 | First Playable Gameplay | **TODO** | - | New Game boot into `STAGE01` interactive 3D gameplay via `ELFR101` / `CSequenceCode::update` (`0x001AE7C8`). |
+| M10 | Sustained Gameplay Testing | **TODO** | - | Continuous 30-minute soak test across room transitions, menus, companion AI, combat, and save/load. |
+| M11 | Intel HD 620 Optimization | **TODO** | - | 30 Hz `UploadFrame()` gating + SIMD `GSCpuBackend` targeting `<= 33.4 ms` median frame time. |
+| M12 | Packaging & Regression | **TODO** | - | Full `ctest` + regression suite verification, Git cleanliness audit, and final `handoff.txt`. |
+
+### Current M04 Runtime Findings & Working Tree Changes
+
+- **Game Override & Runner Controls**: Registered `Rule of Rose (NTSC-U)` (`SLUS_214.48`, CRC32 `0x8cf7b024`, `MissingFunctionPolicy::Stop`) in [`ps2xRuntime/src/lib/game_overrides.cpp`](ps2xRuntime/src/lib/game_overrides.cpp) and added `--max-frames` / `--max-seconds` flags in [`ps2xRuntime/src/main.cpp`](ps2xRuntime/src/main.cpp).
+- **Kernel, Syscall & Interrupt Fixes**:
+  - Updated `InitThread`, alarm syscalls (`0xFD` / `-0xFE`), and exception vector syscalls across [`Thread.cpp`](ps2xRuntime/src/lib/Kernel/Syscalls/Thread.cpp), [`Dispatcher.cpp`](ps2xRuntime/src/lib/Kernel/Syscalls/Dispatcher.cpp), and [`System.cpp`](ps2xRuntime/src/lib/Kernel/Syscalls/System.cpp).
+  - Isolated [`asyncCallbackStack`](ps2xRuntime/src/lib/ps2_runtime.cpp) so timer/alarm callbacks do not corrupt the main thread stack.
+  - Fixed interrupt/alarm/GS-callback preemption guards (`hasActiveInterruptInvocation`) in [`EeScheduler.cpp`](ps2xRuntime/src/lib/Kernel/EeScheduler.cpp), allowing sound scheduler alarms (`0x24a678`) to complete cleanly and Thread 4 (`0x2492b0`) to resume.
+- **Latest Verified Boot State (`out/m04_boot.log`)**:
+  - Loads and starts all 8 IOP `.IRX` modules (`SIO2MAN.IRX`, `SIO2D.IRX`, `DBCMAN.IRX`, `DS1O_D.IRX`, `MCMAN.IRX`, `MCSERV.IRX`, `LIBSD.IRX`, `RXSNDDRV.IRX`), including `RX` sound RPC server startup.
+  - Executes initial `[gs:reg]` setup and DMAC transfers (`[sceDmaSend]` on `0x10009000` and `0x10008000`).
+  - Runs 120 guest VSync ticks (`hostFrames=351`, `activeThreads=4`, `missingFunction=0`, exit code `0`).
+- **Active M04 Blocker**:
+  - Thread 1 (`prio=1`) busy-spins in `rozu_00244410` (`pc=0x244770`, `ra=0x24472c`) waiting on a sound command completion counter while sound worker Thread 4 (`entry=0x2492b0`, `pc=0x24c168`, `prio=5`, `status=1` Ready) is starved by Thread 1's lower numeric priority (`1 < 5`). Investigating why Thread 1 is at `prio=1` when `main` (`0x20463c`) sets priority `5` via `ChangeThreadPriority`.
+  - Systemic function-split fallthroughs/delayed-prologue splits identified in `tools/generate_slus21448_toml.py` remain to be regenerated cleanly into `config/slus_21448.csv` before committing M04.
+
+> For full hardware constraints, SHA/CRC details, and session continuity, see [`handoff.txt`](handoff.txt) and [`gemini_flash/README.txt`](gemini_flash/README.txt).
+
+---
+
+## Upstream PS2Recomp: PlayStation 2 Static Recompiler (Experimental)
 
 [![Discord](https://img.shields.io/badge/Discord-Join%20Server-5865F2?logo=discord&logoColor=white)](https://discord.gg/JQ8mawxUEf)
 
