@@ -8,6 +8,8 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 option(PS2X_ENABLE_RUNNER_UNITY_BUILD "Build ps2EntryRunner with CMake unity build" ON)
 set(PS2X_RUNNER_UNITY_BUILD_BATCH_SIZE 32 CACHE STRING "Unity build batch size for ps2EntryRunner")
 option(PS2X_ENABLE_RUNNER_PCH "Precompile the heavy runtime headers for ps2EntryRunner" ON)
+set(PS2X_RECOMP_OUTPUT_DIR "" CACHE PATH "Directory containing generated ps2_recomp sources and headers")
+option(PS2X_ENABLE_RUNNER_IPO "Enable interprocedural optimization (LTO) for ps2EntryRunner when using PS2X_RECOMP_OUTPUT_DIR" OFF)
 option(PS2X_ENABLE_SCCACHE "Use sccache as compiler launcher when available" ON)
 
 option(PS2X_ENABLE_RUNTIME_LOGS "Enable PS2 runtime logs" ON)
@@ -437,17 +439,29 @@ target_sources(ps2_runtime PRIVATE
     ${KERNEL_SRC_FILES}
 )
 
-file(GLOB RUNNER_SRC_FILES CONFIGURE_DEPENDS
-    "${CMAKE_CURRENT_SOURCE_DIR}/src/runner/*.cpp"
-)
+if(PS2X_RECOMP_OUTPUT_DIR AND EXISTS "${PS2X_RECOMP_OUTPUT_DIR}")
+    file(GLOB RUNNER_SRC_FILES CONFIGURE_DEPENDS
+        "${PS2X_RECOMP_OUTPUT_DIR}/*.cpp"
+    )
+    set(PS2X_RUNNER_GENERATED_DIR "${PS2X_RECOMP_OUTPUT_DIR}")
+    set(RUNNER_REGISTER_CPP "${PS2X_RECOMP_OUTPUT_DIR}/register_functions.cpp")
+else()
+    file(GLOB RUNNER_SRC_FILES CONFIGURE_DEPENDS
+        "${CMAKE_CURRENT_SOURCE_DIR}/src/runner/*.cpp"
+    )
+    set(PS2X_RUNNER_GENERATED_DIR "${CMAKE_CURRENT_SOURCE_DIR}/include")
+    set(RUNNER_REGISTER_CPP "${CMAKE_CURRENT_SOURCE_DIR}/src/runner/register_functions.cpp")
+endif()
 
 set(RUNNER_MAIN_CPP "${CMAKE_CURRENT_SOURCE_DIR}/src/runner/main.cpp")
 set(ROOT_MAIN_CPP "${CMAKE_CURRENT_SOURCE_DIR}/src/main.cpp")
 
 if(EXISTS "${RUNNER_MAIN_CPP}")
     list(APPEND RUNNER_SRC_FILES "${RUNNER_MAIN_CPP}")
+    set(PS2X_RUNNER_ENTRY_MAIN_CPP "${RUNNER_MAIN_CPP}")
 elseif(EXISTS "${ROOT_MAIN_CPP}")
     list(APPEND RUNNER_SRC_FILES "${ROOT_MAIN_CPP}")
+    set(PS2X_RUNNER_ENTRY_MAIN_CPP "${ROOT_MAIN_CPP}")
 endif()
 
 if(PS2X_IS_ANDROID)
@@ -462,11 +476,28 @@ else()
     )
 endif()
 
+if(PS2X_RECOMP_OUTPUT_DIR AND EXISTS "${PS2X_RECOMP_OUTPUT_DIR}")
+    target_include_directories(ps2EntryRunner BEFORE PRIVATE "${PS2X_RECOMP_OUTPUT_DIR}")
+    if(NOT MSVC AND (CMAKE_BUILD_TYPE STREQUAL "Release" OR CMAKE_BUILD_TYPE STREQUAL "RelWithDebInfo"))
+        # Generated recompiled functions compile quickly at -O1 with low RSS while ps2_runtime keeps full Release optimization.
+        target_compile_options(ps2EntryRunner PRIVATE -O1 -fno-var-tracking-assignments)
+    endif()
+endif()
+
 if(PS2X_ENABLE_RUNNER_UNITY_BUILD)
     set_target_properties(ps2EntryRunner PROPERTIES
         UNITY_BUILD ON
         UNITY_BUILD_BATCH_SIZE "${PS2X_RUNNER_UNITY_BUILD_BATCH_SIZE}"
     )
+    foreach(PS2X_NON_UNITY_SRC IN ITEMS
+        "${RUNNER_REGISTER_CPP}"
+        "${PS2X_RUNNER_ENTRY_MAIN_CPP}")
+        if(EXISTS "${PS2X_NON_UNITY_SRC}")
+            set_source_files_properties("${PS2X_NON_UNITY_SRC}" PROPERTIES
+                SKIP_UNITY_BUILD_INCLUSION TRUE
+            )
+        endif()
+    endforeach()
 endif()
 
 if(PS2X_ENABLE_RUNNER_PCH)
@@ -476,8 +507,8 @@ if(PS2X_ENABLE_RUNNER_PCH)
     )
 
     foreach(PS2X_RUNNER_GENERATED_HEADER IN ITEMS
-        "${CMAKE_CURRENT_SOURCE_DIR}/include/ps2_recompiled_functions.h"
-        "${CMAKE_CURRENT_SOURCE_DIR}/include/ps2_recompiled_stubs.h")
+        "${PS2X_RUNNER_GENERATED_DIR}/ps2_recompiled_functions.h"
+        "${PS2X_RUNNER_GENERATED_DIR}/ps2_recompiled_stubs.h")
         if(EXISTS "${PS2X_RUNNER_GENERATED_HEADER}")
             list(APPEND PS2X_RUNNER_PCH_HEADERS "${PS2X_RUNNER_GENERATED_HEADER}")
         endif()
@@ -516,6 +547,11 @@ if(PS2X_ENABLE_DEBUG_UI AND NOT PS2X_IS_VITA AND NOT PS2X_IS_ANDROID)
     target_sources(ps2EntryRunner PRIVATE
         src/lib/ps2_debug_panel.cpp
     )
+    if(PS2X_ENABLE_RUNNER_UNITY_BUILD)
+        set_source_files_properties(src/lib/ps2_debug_panel.cpp PROPERTIES
+            SKIP_UNITY_BUILD_INCLUSION TRUE
+        )
+    endif()
     target_link_libraries(ps2EntryRunner PRIVATE rlImGui imgui)
     target_compile_definitions(ps2EntryRunner PRIVATE PS2X_ENABLE_DEBUG_UI=1)
 endif()
@@ -556,7 +592,9 @@ endif()
 
 if(CMAKE_BUILD_TYPE STREQUAL "Release" OR CMAKE_BUILD_TYPE STREQUAL "RelWithDebInfo")
     EnableFastReleaseMode(ps2_runtime)
-    EnableFastReleaseMode(ps2EntryRunner)
+    if(NOT PS2X_RECOMP_OUTPUT_DIR OR PS2X_ENABLE_RUNNER_IPO)
+        EnableFastReleaseMode(ps2EntryRunner)
+    endif()
 
     if(WIN32 AND NOT PS2X_SHOW_WINDOWS_CONSOLE)
         if(MSVC)
