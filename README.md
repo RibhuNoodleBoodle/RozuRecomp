@@ -1,7 +1,7 @@
 # RozuRecomp — Rule of Rose (`SLUS-21448`) Static Recompilation
 
 > [!NOTE]
-> **Status (`2026-11-15`):** In progress — **Milestones M00–M04 complete**, next up **Milestone M05 (`IOP IRX, CDVD & RPC`)**.
+> **Status (`2026-11-15`):** In progress — **Milestones M00–M05 complete**, next up **Milestone M06 (`GS & VU Graphics`)**.
 > Target release: **Rule of Rose (USA, `SLUS-21448`, `VER = 1.00`, CRC32 `0x8cf7b024`)**, built on [`ran-j/PS2Recomp`](https://github.com/ran-j/PS2Recomp) (`e5636981a1c9de368f6b71e819c3dc188dfedbf4`).
 
 ---
@@ -16,8 +16,8 @@
 | M01 | Upstream Toolchain & Tests | **DONE** | `9a7990313cad693e3ba3e424012626ad8928fd22` | Built `ps2xAnalyzer`, `ps2xRecomp`, `ps2xIOP`, `ps2xRuntime`, and `ps2xTest` in `out/build/baseline` (`-DPS2X_ENABLE_FFMPEG=OFF`, `-msse4.1` for GCC 15 `x86_64`); `45/45` `ctest` + `446/446` `ps2x_tests` (`491/491`) passing. |
 | M02 | Function Map & `.vutext` Exclusion | **DONE** | `6ad9152f95c05da221197f70aed4914da5be13e2` | Excluded `.vutext` (`[0x00291230, 0x002953B0)`) / `.vudata` / `.DVP.*` in `ElfParser`, synthesized `.gnu.linkonce.t.*` boundaries, and generated `config/slus_21448.{csv,toml}` via `tools/generate_slus21448_toml.py`: `8,983` functions (`7,534` `.text` + `1,449` `.gnu.linkonce.t.*`, `228` stubs, `439` entries, `171` jump tables); `491/491` tests passing. |
 | M03 | Static Recompilation Integration | **DONE** | `737466feda6602d45f4377e875f4bc9ca16f20f5` | Recompiled `8,983` functions (`0` unhandled, `0` errors) into `out/recomp/`, integrated `64`-batch unity compilation (`PS2X_RECOMP_OUTPUT_DIR`) into `ps2xRuntime/CMakeLists.txt`, and linked `38M` `ps2EntryRunner` (`889.6s`, `1.59 GiB` peak RSS); `491/491` tests passing. |
-| M04 | Runtime Boot & Dispatch | **DONE** | *This commit* | Booted `SLUS_214.48` through `0x100008` -> SIF RPC + all 8 IOP `.IRX` modules + `RXSNDDRV.IRX`, fixed kernel/alarm/stack/interrupt scheduling, added `libcdvd` HLE bindings + `--cd-image` / ISO auto-wiring, fixed function-map splits (`9,078` functions, `0` errors), entered main engine loop (`0x2051e8`), and rendered 512x448 GS frames (`dma=10`, `gif=6`, `vif=2`, `vsyncTicks=29`, `missingFunction=0`); `491/491` tests passing. |
-| M05 | IOP IRX, CDVD & RPC | **TODO** | - | `bedInitSystem` (`0x001005E0`) full disc / case-insensitive CDVD VFS & `.RPK` loading. |
+| M04 | Runtime Boot & Dispatch | **DONE** | `6f335bb22052c0550bb034e01e5c9012c36ed847` | Booted `SLUS_214.48` through `0x100008` -> SIF RPC + all 8 IOP `.IRX` modules + `RXSNDDRV.IRX`, fixed kernel/alarm/stack/interrupt scheduling, added `libcdvd` HLE bindings + `--cd-image` / ISO auto-wiring, fixed function-map splits (`9,078` functions, `0` errors), entered main engine loop (`0x2051e8`), and rendered 512x448 GS frames (`dma=10`, `gif=6`, `vif=2`, `vsyncTicks=29`, `missingFunction=0`); `491/491` tests passing. |
+| M05 | IOP IRX, CDVD & RPC | **DONE** | *This commit* | Implemented multi-level case-insensitive path resolution in [`PS2Vfs::resolveHostPath`](ps2xRuntime/src/lib/ps2_vfs.cpp) (preserving `O_CREAT` parents), wired `sceCdCallback` state/dispatch across N-cmds in [`CD.cpp`](ps2xRuntime/src/lib/Kernel/Stubs/CD.cpp), added `PS2Vfs` & `IOPCONF.CNF` & `sceCdCallback` tests (`45/45` `ctest` + `449/449` `ps2x_tests` = `494/494`), and verified clean 60s boot loading all 8 `.IRX` modules (`id=1..8`), `RXSNDDRV.IRX` DMA/RPC, `dma=22`, `gif=18`, `vif=2`, `vsyncTicks=41`, `missingFunction=0`. |
 | M06 | GS & VU Graphics | **TODO** | - | VIF1/GIF DMA sync, 44 `.vutext` `.DVP.overlay` VU1 uploads, `512x448` / `512x384` boot logos & title screen. |
 | M07 | Movies & Audio | **TODO** | - | `MOVIE/*.PSS` MPEG-2 playback (staging FFmpeg headers in `out/deps/`) and `LIBSD.IRX` / `RXSNDDRV.IRX` `.STR` streaming. |
 | M08 | Input, Menu & Saves | **TODO** | - | `libpad2` / `libdbc` / `libvib` handlers for `BedPad` (`0x00101AEC`) and `mc0` (`BASLUS-21448*`) save/load. |
@@ -26,7 +26,17 @@
 | M11 | Intel HD 620 Optimization | **TODO** | - | 30 Hz `UploadFrame()` gating + SIMD `GSCpuBackend` targeting `<= 33.4 ms` median frame time. |
 | M12 | Packaging & Regression | **TODO** | - | Full `ctest` + regression suite verification, Git cleanliness audit, and final `handoff.txt`. |
 
-### Current M04 Runtime Changes & Verification (`491/491` Tests Passing)
+### Current M05 Runtime & Test Changes (`494/494` Tests Passing)
+
+- **Case-Insensitive Multi-Level VFS Resolution ([`ps2_vfs.cpp`](ps2xRuntime/src/lib/ps2_vfs.cpp))**:
+  - Updated `PS2Vfs::resolveHostPath` to walk components case-insensitively on Linux ext4 when exact-case lookup misses (covering `cdrom0:\data\bg\stage01\Map.rpk;1`, `IOPCONF.CNF` lowercase module paths like `modules/pad2/ds1o_d.irx`, `host0:`, and `mc0:`), while preserving trailing non-existent components for `PS2_FIO_O_CREAT`.
+- **CDVD Callback Dispatch & Sync ([`CD.cpp`](ps2xRuntime/src/lib/Kernel/Stubs/CD.cpp))**:
+  - Implemented `sceCdCallback` registration returning previous callback address and queuing completion callbacks (`SCECdFuncRead=1`, `Seek=4`, `Standby=5`, `Pause=6`, `Break=7`) on active `EeScheduler` threads, while `sceCdSync(0)` reports ready cleanly.
+- **Unit & Live Verification**:
+  - Added tests in [`ps2_runtime_io_tests.cpp`](ps2xTest/src/ps2_runtime_io_tests.cpp) and [`ps2_iop_tests.cpp`](ps2xTest/src/ps2_iop_tests.cpp); `ctest` (`45/45`) and `ps2x_tests` (`449/449`) pass (`494/494`, 0 failures).
+  - Live `ps2EntryRunner` 60s verification (`out/m05_iop.log`) exited `0`, loaded all 8 `.IRX` modules (`id=1..8`), started `RXSNDDRV.IRX` RPC/DMA, and rendered `512x448` loading animation frames (`idx=0..17`, `vsyncTicks=41`, `dma=22`, `gif=18`, `vif=2`, `missingFunction=0`).
+
+### M04 Runtime Changes & Verification (`491/491` Tests Passing)
 
 - **Game Override & Runner Controls**: Registered `Rule of Rose (NTSC-U)` (`SLUS_214.48`, CRC32 `0x8cf7b024`, `MissingFunctionPolicy::Stop`) with `libcdvd` entry-point HLE bindings and auto-discovered `Rule of Rose (USA).iso` `cdImage` path in [`ps2xRuntime/src/lib/game_overrides.cpp`](ps2xRuntime/src/lib/game_overrides.cpp), and added `--cd-image` / `--cd-root` / `--max-frames` / `--max-seconds` flags in [`ps2xRuntime/src/main.cpp`](ps2xRuntime/src/main.cpp).
 - **Kernel, Syscall, Interrupt & `libcdvd` Fixes**:

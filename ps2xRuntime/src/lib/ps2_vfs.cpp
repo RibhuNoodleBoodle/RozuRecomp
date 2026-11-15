@@ -4,6 +4,7 @@
 #include "runtime/ps2_rom_device.h"
 
 #include <algorithm>
+#include <cctype>
 #include <chrono>
 #include <cerrno>
 #include <cstdio>
@@ -143,6 +144,74 @@ namespace
                 return false;
         }
         return true;
+    }
+
+    std::string toLowerAscii(std::string_view value)
+    {
+        std::string lowered(value);
+        std::transform(lowered.begin(), lowered.end(), lowered.begin(),
+                       [](unsigned char c)
+                       { return static_cast<char>(std::tolower(c)); });
+        return lowered;
+    }
+
+    std::filesystem::path resolveCaseInsensitivePath(const std::filesystem::path &base,
+                                                     const std::filesystem::path &relative)
+    {
+        const std::filesystem::path direct = (base / relative).lexically_normal();
+        std::error_code ec;
+        if (relative.empty() || relative == "." || std::filesystem::exists(direct, ec))
+            return direct;
+
+        std::filesystem::path current = base.lexically_normal();
+        auto partIt = relative.begin();
+        for (; partIt != relative.end(); ++partIt)
+        {
+            const std::filesystem::path &part = *partIt;
+            const std::string partStr = part.string();
+            if (partStr.empty() || partStr == ".")
+                continue;
+
+            const std::filesystem::path exact = current / part;
+            ec.clear();
+            if (std::filesystem::exists(exact, ec) && !ec)
+            {
+                current = exact;
+                continue;
+            }
+
+            ec.clear();
+            if (!std::filesystem::is_directory(current, ec) || ec)
+                break;
+
+            const std::string needle = toLowerAscii(partStr);
+            bool matched = false;
+            std::error_code iterEc;
+            for (const auto &entry : std::filesystem::directory_iterator(
+                     current, std::filesystem::directory_options::skip_permission_denied, iterEc))
+            {
+                if (iterEc)
+                    break;
+                if (toLowerAscii(entry.path().filename().string()) == needle)
+                {
+                    current = entry.path();
+                    matched = true;
+                    break;
+                }
+            }
+
+            if (!matched)
+                break;
+        }
+
+        // Preserve trailing non-existent components so O_CREAT still creates files
+        // under an existing differently-cased parent directory.
+        for (; partIt != relative.end(); ++partIt)
+        {
+            if (*partIt != ".")
+                current /= *partIt;
+        }
+        return current.lexically_normal();
     }
 
     std::time_t toTimeT(std::filesystem::file_time_type value)
@@ -297,7 +366,7 @@ bool PS2Vfs::resolveHostPath(std::string_view path, const PS2VfsMounts &mounts, 
     std::filesystem::path relative;
     if (base.empty() || !safeRelativePath(parsed.path, relative))
         return false;
-    result = (base / relative).lexically_normal();
+    result = resolveCaseInsensitivePath(base, relative);
     return true;
 }
 

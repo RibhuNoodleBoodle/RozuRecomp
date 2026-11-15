@@ -2,6 +2,8 @@
 #include "ps2_runtime.h"
 #include "ps2_syscalls.h"
 #include "ps2_stubs.h"
+#include "runtime/ps2_rom_device.h"
+#include "runtime/ps2_vfs.h"
 
 #include <filesystem>
 #include <fstream>
@@ -741,6 +743,85 @@ void register_ps2_runtime_io_tests()
             t.Equals(getRegS32(&test.ctx, 2), 1, "sceCdRead should succeed when cdImage is configured");
             t.Equals(std::memcmp(test.rdram.data() + bufAddr, "cd-image", 8), 0,
                      "sceCdRead should copy sector data from the configured image");
+        });
+
+        tc.Run("PS2Vfs resolves multi-level case-insensitive paths and preserves O_CREAT parents", [](TestCase &t)
+        {
+            TestContext test;
+
+            const std::filesystem::path stageDir = test.paths.cdRoot / "DATA" / "BG" / "STAGE01";
+            const std::filesystem::path mapPath = stageDir / "MAP.RPK";
+            std::filesystem::create_directories(stageDir);
+            {
+                std::ofstream out(mapPath, std::ios::binary);
+                out.write("RPK12345", 8);
+            }
+
+            const std::filesystem::path mcGameDir = test.paths.mcRoot / "BASLUS-21448";
+            std::filesystem::create_directories(mcGameDir);
+
+            PS2Vfs vfs;
+            PS2VfsMounts mounts{test.paths.cdRoot, test.paths.cdRoot, test.paths.mcRoot};
+            PS2RomDevice rom;
+
+            std::filesystem::path resolved;
+            t.IsTrue(vfs.resolveHostPath("cdrom0:\\data\\bg\\stage01\\Map.rpk;1", mounts, resolved),
+                     "resolveHostPath should accept mixed-case multi-level CDROM paths with ;1");
+            t.Equals(resolved, mapPath.lexically_normal(),
+                     "resolveHostPath should resolve exact on-disk mixed-case hierarchy");
+
+            PS2VfsStat st{};
+            t.IsTrue(vfs.stat("cdrom0:/Data/Bg/Stage01/map.rpk;1", mounts, rom, st),
+                     "PS2Vfs::stat should succeed on case-mismatched hierarchy");
+            t.Equals(st.size, static_cast<uint64_t>(8u), "PS2Vfs::stat should report actual file size");
+
+            const int32_t fd = vfs.open("cdrom0:\\data\\bg\\stage01\\map.rpk;1", PS2_FIO_O_RDONLY, mounts, rom);
+            t.IsTrue(fd >= 3, "PS2Vfs::open should open existing uppercase file via lowercase path");
+            char buf[9]{};
+            t.Equals(vfs.read(fd, buf, 8), static_cast<int64_t>(8), "PS2Vfs::read should return file bytes");
+            t.Equals(std::string(buf), std::string("RPK12345"), "PS2Vfs::read should return expected payload");
+            t.Equals(vfs.close(fd), 0, "PS2Vfs::close should succeed");
+
+            const int32_t createFd = vfs.open("mc0:\\baslus-21448\\newsave.dat",
+                                              PS2_FIO_O_WRONLY | PS2_FIO_O_CREAT | PS2_FIO_O_TRUNC,
+                                              mounts, rom);
+            t.IsTrue(createFd >= 3, "PS2Vfs::open(O_CREAT) should create new files inside differently-cased directories");
+            t.Equals(vfs.write(createFd, "SAVE", 4), static_cast<int64_t>(4), "PS2Vfs::write should write created file");
+            t.Equals(vfs.close(createFd), 0, "PS2Vfs::close should succeed on created file");
+            t.IsTrue(std::filesystem::exists(mcGameDir / "newsave.dat"),
+                     "created file should land inside the existing BASLUS-21448 directory");
+        });
+
+        tc.Run("sceCdCallback returns previous callback and sceCdSync reports ready", [](TestCase &t)
+        {
+            TestContext test;
+
+            clearContext(test.ctx);
+            setRegU32(test.ctx, 4, 0u);
+            ps2_stubs::sceCdInit(test.rdram.data(), &test.ctx, nullptr);
+            t.Equals(getRegS32(&test.ctx, 2), 1, "sceCdInit should succeed");
+
+            clearContext(test.ctx);
+            setRegU32(test.ctx, 4, 0x0024B000u);
+            ps2_stubs::sceCdCallback(test.rdram.data(), &test.ctx, nullptr);
+            t.Equals(getRegU32(&test.ctx, 2), 0u, "initial sceCdCallback should return 0");
+
+            clearContext(test.ctx);
+            setRegU32(test.ctx, 4, 0x0024B100u);
+            ps2_stubs::sceCdCallback(test.rdram.data(), &test.ctx, nullptr);
+            t.Equals(getRegU32(&test.ctx, 2), 0x0024B000u,
+                     "second sceCdCallback should return the previously registered callback");
+
+            clearContext(test.ctx);
+            setRegU32(test.ctx, 4, 0u);
+            ps2_stubs::sceCdCallback(test.rdram.data(), &test.ctx, nullptr);
+            t.Equals(getRegU32(&test.ctx, 2), 0x0024B100u,
+                     "clearing sceCdCallback should return the previous callback");
+
+            clearContext(test.ctx);
+            setRegU32(test.ctx, 4, 0u);
+            ps2_stubs::sceCdSync(test.rdram.data(), &test.ctx, nullptr);
+            t.Equals(getRegS32(&test.ctx, 2), 0, "sceCdSync(0) should return completed (0)");
         });
     });
 }

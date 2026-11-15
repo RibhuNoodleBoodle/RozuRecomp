@@ -71,5 +71,33 @@ void register_ps2_iop_tests()
 
         });
 
+        tc.Run("IOPCONF.CNF module sequence resolves mixed-case IRX paths and activates RPC", [](TestCase &t)
+        {
+            const ps2x::iop::ParsedPs2Path pad = ps2x::iop::parsePs2Path("cdrom0:\\modules\\pad2\\ds1o_d.irx;1");
+            t.Equals(pad.device, ps2x::iop::Ps2PathDevice::Cdrom, "mixed-case nested IRX path should parse as Cdrom");
+            t.Equals(pad.path, std::string("modules/pad2/ds1o_d.irx"), "nested path should normalize separators and ;1");
+            t.Equals(ps2x::iop::ps2PathLeafKey(pad), std::string("ds1o_d"), "leaf key should strip dir and .irx extension");
+
+            iop_test::Host host;
+            ps2x::iop::IopSubsystem subsystem(host);
+
+            const char *const hleSequence[] = {
+                "cdrom0:\\modules\\sio2man.irx;1",
+                "cdrom0:\\modules\\sio2d.irx;1",
+                "cdrom0:\\modules\\dbcman.irx;1",
+                "cdrom0:\\modules\\mcman.irx;1",
+                "cdrom0:\\modules\\mcserv.irx;1",
+                "cdrom0:\\modules\\libsd.irx;1",
+            };
+            for (const char *path : hleSequence)
+            {
+                const ps2x::iop::ModuleLoadResult res = subsystem.loadModule(path);
+                t.IsTrue(res.moduleId > 0, std::string("expected positive module ID for ") + path);
+            }
+
+            t.IsTrue(subsystem.canBindRpc(0x80000400u), "mcserv RPC should bind after IOPCONF sequence");
+            t.IsTrue(subsystem.canBindRpc(0x80000701u), "libsd RPC should bind after IOPCONF sequence");
+        });
+
     });
 }
