@@ -20,6 +20,8 @@ Next Milestone to Run: M00 (`gemini_flash/Gemini_Step_00_Inventory_And_Baseline.
   (`docs(research): establish Rule of Rose feasibility baseline`)
 - Argon Architecture & Flash Prompts Commit SHA: `02b3817959a8a2250f5b93ba614eb971bd79357e`
   (`docs(architecture): define PS2Recomp milestones and Flash work orders`)
+- Argon Handoff Enforcement Commit SHA: `b460bc95cf2695a8dc2ba50b67a6206ee4d4ce65`
+  (`docs(prompts): enforce mandatory handoff.txt write and commit gate after every milestone`)
 
 --------------------------------------------------------------------------------
 2. VERIFIED HOST HARDWARE, OS, & STORAGE PROFILE
@@ -91,6 +93,10 @@ Next Milestone to Run: M00 (`gemini_flash/Gemini_Step_00_Inventory_And_Baseline.
 1. To start or resume implementation in a fresh Gemini Flash session, paste the
    entire contents of the next `TODO` prompt file listed above (starting with
    `gemini_flash/Gemini_Step_00_Inventory_And_Baseline.txt`).
-2. If any build, recompilation, or runtime step fails, paste
+2. **MANDATORY RULE**: Write and commit `handoff.txt` immediately after EVERY
+   major milestone (`M00` through `M12`) and after any recovery session, recording
+   the exact 40-character milestone commit SHA (`git rev-parse HEAD`), verified
+   metrics, and next milestone pointer.
+3. If any build, recompilation, or runtime step fails, paste
    `gemini_flash/Gemini_Recovery_And_Debugging.txt` along with the failing log.
 ================================================================================
