@@ -2,9 +2,9 @@
 RULE OF ROSE (PS2, SLUS-21448) — PS2RECOMP CONTINUITY & STATE HANDOFF LEDGER
 ================================================================================
 Last Updated By: Gemini Implementation & Verification Engineer
-Timestamp: 2026-11-15T19:51:15+05:30
-Project Status: IN PROGRESS — M01 COMPLETE, STARTING M02
-Next Milestone to Run: M02 (`gemini_flash/Gemini_Step_02_Ghidra_And_Function_Map.txt`)
+Timestamp: 2026-11-15T20:01:20+05:30
+Project Status: IN PROGRESS — M02 COMPLETE, STARTING M03
+Next Milestone to Run: M03 (`gemini_flash/Gemini_Step_03_Static_Recompilation_Integration.txt`)
 
 --------------------------------------------------------------------------------
 1. REPOSITORY & UPSTREAM BASELINE
@@ -75,7 +75,7 @@ Next Milestone to Run: M02 (`gemini_flash/Gemini_Step_02_Ghidra_And_Function_Map
 | --- | ------ | ---------- | ----------- | ------- |
 | M00 | DONE   | `ee43bbaf45eebdc49a9de33e4f0bde39b3b9f119` | `gemini_flash/Gemini_Step_00_Inventory_And_Baseline.txt` | Harden `.gitignore`, extract `Rule of Rose (USA).iso` (2,145 files) to `out/disc/`, verify `SLUS_214.48` SHA-256 `262efe71...` / CRC32 `0x8cf7b024`, `/` 1472M free, `/mnt/6421-8598` 246389M free |
 | M01 | DONE   | `9a7990313cad693e3ba3e424012626ad8928fd22` | `gemini_flash/Gemini_Step_01_Upstream_Toolchain_And_Tests.txt` | Build baseline in `out/build/baseline` (`FFMPEG=OFF`, added `-msse4.1` for GCC 15 x86_64, `7m36.7s`); `ctest` `45/45` + `ps2x_tests` `446/446` passed (`491/491`); `/` `1514M` free, `/mnt/6421-8598` `244408M` free |
-| M02 | TODO   | -          | `gemini_flash/Gemini_Step_02_Ghidra_And_Function_Map.txt` | Exclude `.vutext` in `ElfParser`, generate `config/slus_21448.toml` (`~8,963` functions) |
+| M02 | DONE   | `6ad9152f95c05da221197f70aed4914da5be13e2` | `gemini_flash/Gemini_Step_02_Ghidra_And_Function_Map.txt` | Updated `ElfParser` (`.vudata`/`.DVP.*` exclusion + `.gnu.linkonce.t.*` synthesis); `tools/generate_slus21448_toml.py` generated `config/slus_21448.{csv,toml}` with `8,983` functions (`7,534` `.text` + `1,449` `.gnu.linkonce.t.*`, `0` `.vutext`, `228` stubs, `439` entries, `171` jump tables); `ctest` `45/45` + `ps2x_tests` `446/446` passed (`491/491`); `/` `1564M` free, `/mnt/6421-8598` `244401M` free |
 | M03 | TODO   | -          | `gemini_flash/Gemini_Step_03_Static_Recompilation_Integration.txt` | Run `ps2xRecomp`, batch into 64 unity `.cpp` files, compile & link runner (`< 6 GiB` RSS) |
 | M04 | TODO   | -          | `gemini_flash/Gemini_Step_04_Runtime_Boot_And_Dispatch.txt` | Register `0x8cf7b024` overrides, wire `T0_COUNT` & `sceGsSyncVCallback`, boot into `MagSystem::run` |
 | M05 | TODO   | -          | `gemini_flash/Gemini_Step_05_IOP_IRX_CDVD_And_RPC.txt` | Load `IOPCONF.CNF` & 8 `.IRX` modules, case-insensitive CDVD/VFS lookup for `.RPK` archives |
