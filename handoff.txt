@@ -1,10 +1,10 @@
 ================================================================================
 RULE OF ROSE (PS2, SLUS-21448) — PS2RECOMP CONTINUITY & STATE HANDOFF LEDGER
 ================================================================================
-Last Updated By: Gemini Argon (High Reasoning) — Systems Architect & Research Lead
-Timestamp: 2026-11-15T19:25:00+05:30
-Project Status: ARCHITECTURE & RESEARCH COMPLETE — READY FOR FLASH MILESTONE M00
-Next Milestone to Run: M00 (`gemini_flash/Gemini_Step_00_Inventory_And_Baseline.txt`)
+Last Updated By: Gemini Implementation & Verification Engineer
+Timestamp: 2026-11-15T19:33:15+05:30
+Project Status: IN PROGRESS — M00 COMPLETE, STARTING M01
+Next Milestone to Run: M01 (`gemini_flash/Gemini_Step_01_Upstream_Toolchain_And_Tests.txt`)
 
 --------------------------------------------------------------------------------
 1. REPOSITORY & UPSTREAM BASELINE
@@ -73,7 +73,7 @@ Next Milestone to Run: M00 (`gemini_flash/Gemini_Step_00_Inventory_And_Baseline.
 --------------------------------------------------------------------------------
 | ID  | Status | Commit SHA | Prompt File | Summary |
 | --- | ------ | ---------- | ----------- | ------- |
-| M00 | TODO   | -          | `gemini_flash/Gemini_Step_00_Inventory_And_Baseline.txt` | Harden `.gitignore` (`*.iso`, `SLUS_*`, `*.IRX`), extract ISO to `out/disc/`, verify hashes |
+| M00 | DONE   | `ee43bbaf45eebdc49a9de33e4f0bde39b3b9f119` | `gemini_flash/Gemini_Step_00_Inventory_And_Baseline.txt` | Harden `.gitignore`, extract `Rule of Rose (USA).iso` (2,145 files) to `out/disc/`, verify `SLUS_214.48` SHA-256 `262efe71...` / CRC32 `0x8cf7b024`, `/` 1472M free, `/mnt/6421-8598` 246389M free |
 | M01 | TODO   | -          | `gemini_flash/Gemini_Step_01_Upstream_Toolchain_And_Tests.txt` | Build upstream tools/runtime in `out/build/baseline` (`-DPS2X_ENABLE_FFMPEG=OFF`), pass `ctest` |
 | M02 | TODO   | -          | `gemini_flash/Gemini_Step_02_Ghidra_And_Function_Map.txt` | Exclude `.vutext` in `ElfParser`, generate `config/slus_21448.toml` (`~8,963` functions) |
 | M03 | TODO   | -          | `gemini_flash/Gemini_Step_03_Static_Recompilation_Integration.txt` | Run `ps2xRecomp`, batch into 64 unity `.cpp` files, compile & link runner (`< 6 GiB` RSS) |
