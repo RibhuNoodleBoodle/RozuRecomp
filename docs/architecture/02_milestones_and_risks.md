@@ -2,7 +2,7 @@
 
 ## 1. End-to-End Milestone Roadmap (M00–M12)
 
-Every milestone below corresponds 1:1 to a self-contained worker prompt in `gemini_flash/Gemini_Step_XX_*.txt`. Flash MUST complete milestones in strict sequential order and MUST NOT advance to Milestone `N+1` until all quantitative pass gates of Milestone `N` are verified by command output.
+Every milestone below corresponds 1:1 to a self-contained worker prompt in `gemini_flash/Gemini_Step_XX_*.txt`. Flash MUST complete milestones in strict sequential order, **MUST write/update `/mnt/6421-8598/building/RozuRecomp/handoff.txt` immediately after every major milestone (`M00`–`M12`) with the exact 40-character commit SHA and verified metrics**, and MUST NOT advance to Milestone `N+1` until all quantitative pass gates of Milestone `N` and the `handoff.txt` update are verified.
 
 | ID | Milestone Title |Worker Prompt File | Prerequisites | Core Deliverables | Quantitative Pass Gate | Commit Message |
 | :--- | :--- | :--- | :--- | :--- | :--- | :--- |

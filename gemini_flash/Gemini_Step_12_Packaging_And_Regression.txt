@@ -58,13 +58,23 @@ git status --short --branch
 - `git status --porcelain` is empty after committing M12.
 
 [GIT COMMIT GATE]
+1. Stage and commit the M12 regression runner script:
 ```bash
-git add tools/run_rozu_regression.py handoff.txt
+git add tools/run_rozu_regression.py
 git commit -m "chore(release): finalize Rule of Rose recompilation test suite and handoff"
+M12_SHA=$(git rev-parse HEAD)
+echo "M12_SHA=$M12_SHA"
 ```
 
 [HANDOFF.TXT UPDATE]
-Ensure `/mnt/6421-8598/building/RozuRecomp/handoff.txt` records the M12 commit SHA and sets `Project Status: COMPLETE (M00-M12 VERIFIED)`.
+**MANDATORY**: Immediately write/update `/mnt/6421-8598/building/RozuRecomp/handoff.txt` after completing Milestone M12:
+1. Mark `M12` as `DONE` with the exact 40-character commit SHA (`$M12_SHA`).
+2. Set `Project Status: COMPLETE (M00-M12 VERIFIED)` and `Next Milestone to Run: NONE (ALL MILESTONES COMPLETE)`.
+3. Stage and commit `handoff.txt`:
+```bash
+git add handoff.txt
+git commit -m "docs(handoff): write final handoff.txt after M12 regression completion"
+```
 
 [FAILURE & RECOVERY]
 If any regression check fails in `run_rozu_regression.py`, fix the underlying regression before committing M12.

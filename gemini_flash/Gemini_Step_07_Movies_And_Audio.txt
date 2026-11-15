@@ -74,15 +74,24 @@ ctest --test-dir /mnt/6421-8598/building/RozuRecomp/out/build/baseline --output-
 - `ctest` passes 100% of unit tests.
 
 [GIT COMMIT GATE]
+1. Stage and commit the M07 MPEG/Audio/IOP changes:
 ```bash
-git add ps2xRuntime/ ps2xIOP/ ps2xTest/ handoff.txt
+git add ps2xRuntime/ ps2xIOP/ ps2xTest/
 git commit -m "feat(media): support Rule of Rose PSS movie playback and RXSNDDRV audio streaming"
+M07_SHA=$(git rev-parse HEAD)
+echo "M07_SHA=$M07_SHA"
 ```
 
 [HANDOFF.TXT UPDATE]
-Update `/mnt/6421-8598/building/RozuRecomp/handoff.txt`:
-- Mark `M07` as `DONE` with the commit SHA, decoded `.PSS` frame count, and audio PCM RMS metrics.
-- Set `Next Milestone to Run: M08` (`gemini_flash/Gemini_Step_08_Input_Menu_And_Saves.txt`).
+**MANDATORY**: Immediately write/update `/mnt/6421-8598/building/RozuRecomp/handoff.txt` after completing Milestone M07:
+1. Mark `M07` as `DONE` with the exact 40-character commit SHA (`$M07_SHA`).
+2. Record the decoded `.PSS` frame count, `RXSNDDRV.IRX` RPC SID, and `PS2AudioBackend` PCM RMS / peak metrics.
+3. Set `Next Milestone to Run: M08 (gemini_flash/Gemini_Step_08_Input_Menu_And_Saves.txt)`.
+4. Stage and commit `handoff.txt`:
+```bash
+git add handoff.txt
+git commit -m "docs(handoff): write handoff.txt after M07 movies and audio verification"
+```
 
 [FAILURE & RECOVERY]
 - If `sceMpegDemuxPssRing` stalls waiting for ringbuffer callbacks, inspect `MPEG.cpp` callback invocation for `sceMpegCbStrVideo` / `sceMpegCbStrPcm` and ensure return values advance the ring pointer.

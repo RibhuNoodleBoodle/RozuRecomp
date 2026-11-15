@@ -78,16 +78,24 @@ Step 4: Rebuild `ps2xRecomp`, `ps2xAnalyzer`, and `ps2xTest` in `out/build/basel
 - `ctest` passes 100% of unit tests (including the new `.vutext` exclusion test).
 
 [GIT COMMIT GATE]
-Stage only the modified source/tool/config/handoff files (never `out/` or ISO):
+1. Stage only the modified source/tool/config files (never `out/` or ISO) and commit M02:
 ```bash
-git add ps2xRecomp/ ps2xAnalyzer/ ps2xTest/ tools/generate_slus21448_toml.py config/slus_21448.toml handoff.txt
+git add ps2xRecomp/ ps2xAnalyzer/ ps2xTest/ tools/generate_slus21448_toml.py config/slus_21448.toml
 git commit -m "feat(recomp): exclude .vutext from R5900 code scan and add SLUS_214.48 config generator"
+M02_SHA=$(git rev-parse HEAD)
+echo "M02_SHA=$M02_SHA"
 ```
 
 [HANDOFF.TXT UPDATE]
-Update `/mnt/6421-8598/building/RozuRecomp/handoff.txt`:
-- Mark `M02` as `DONE` with the commit SHA and exact function count in `config/slus_21448.toml`.
-- Set `Next Milestone to Run: M03` (`gemini_flash/Gemini_Step_03_Static_Recompilation_Integration.txt`).
+**MANDATORY**: Immediately write/update `/mnt/6421-8598/building/RozuRecomp/handoff.txt` after completing Milestone M02:
+1. Mark `M02` as `DONE` with the exact 40-character commit SHA (`$M02_SHA`).
+2. Record the exact function count in `config/slus_21448.toml` (`.text`, SDK, `.gnu.linkonce.t.*`, and `0` `.vutext` entries) and `ctest` pass status.
+3. Set `Next Milestone to Run: M03 (gemini_flash/Gemini_Step_03_Static_Recompilation_Integration.txt)`.
+4. Stage and commit `handoff.txt`:
+```bash
+git add handoff.txt
+git commit -m "docs(handoff): write handoff.txt after M02 function map generation"
+```
 
 [FAILURE & RECOVERY]
 If `ps2xRecomp` ignores custom functions in `config/slus_21448.toml` when `.symtab` is empty, inspect `PS2Recompiler::initialize()` in `ps2xRecomp/src/lib/ps2_recompiler.cpp` and ensure TOML-configured function boundaries are merged into `m_elfParser->getFunctions()` before `decodeFunction()` runs.

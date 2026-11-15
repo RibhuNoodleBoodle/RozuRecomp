@@ -90,10 +90,16 @@ After applying the recovery fix, re-run the failing milestone's verification com
 - `ctest` passes 100% of unit tests.
 
 [GIT COMMIT GATE]
-Commit the fix either as part of the active milestone commit or as a dedicated `fix(<subsystem>): <description>` commit.
+Commit the recovery fix (`fix(<subsystem>): <description>`) and capture `RECOVERY_SHA=$(git rev-parse HEAD)`.
 
 [HANDOFF.TXT UPDATE]
-Document the failure signature, root cause, and exact fix in `/mnt/6421-8598/building/RozuRecomp/handoff.txt` under `Recent Recovery Notes`.
+**MANDATORY**: Immediately write/update `/mnt/6421-8598/building/RozuRecomp/handoff.txt` after every recovery action:
+1. Document the failure signature, root cause, exact fix, and `$RECOVERY_SHA` under `Recent Recovery Notes`.
+2. Stage and commit `handoff.txt`:
+```bash
+git add handoff.txt
+git commit -m "docs(handoff): record recovery fix and state update"
+```
 
 [FAILURE & RECOVERY]
 If a fix introduces a regression in `ctest`, `git diff` and revert the regressing hunk immediately before trying an alternative fix.

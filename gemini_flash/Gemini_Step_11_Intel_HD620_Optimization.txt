@@ -65,15 +65,24 @@ Run the 3,600-frame benchmark and verify:
 - `ctest` passes 100% of unit tests.
 
 [GIT COMMIT GATE]
+1. Stage and commit the M11 Intel HD 620 / SIMD optimization changes:
 ```bash
-git add ps2xRuntime/ ps2xIOP/ ps2xTest/ handoff.txt
+git add ps2xRuntime/ ps2xIOP/ ps2xTest/
 git commit -m "perf(hd620): eliminate redundant texture uploads and SIMD-optimize GS software rasterizer"
+M11_SHA=$(git rev-parse HEAD)
+echo "M11_SHA=$M11_SHA"
 ```
 
 [HANDOFF.TXT UPDATE]
-Update `/mnt/6421-8598/building/RozuRecomp/handoff.txt`:
-- Mark `M11` as `DONE` with the commit SHA and Before vs After benchmark table (`p50`, `p95`, `p99` ms, `uploads/sec`, `RSS`).
-- Set `Next Milestone to Run: M12` (`gemini_flash/Gemini_Step_12_Packaging_And_Regression.txt`).
+**MANDATORY**: Immediately write/update `/mnt/6421-8598/building/RozuRecomp/handoff.txt` after completing Milestone M11:
+1. Mark `M11` as `DONE` with the exact 40-character commit SHA (`$M11_SHA`).
+2. Record the Before vs After benchmark metrics (`p50`, `p95`, `p99` ms/frame, `UpdateTexture` calls/sec, host RSS, and visual parity check).
+3. Set `Next Milestone to Run: M12 (gemini_flash/Gemini_Step_12_Packaging_And_Regression.txt)`.
+4. Stage and commit `handoff.txt`:
+```bash
+git add handoff.txt
+git commit -m "docs(handoff): write handoff.txt after M11 Intel HD 620 optimization"
+```
 
 [FAILURE & RECOVERY]
 - If any SIMD change in `gs_cpu_backend.cpp` alters pixel output in `test_gs_*` or Stage 01 frame captures, revert the inaccurate SIMD loop and keep only bit-exact SIMD operations.

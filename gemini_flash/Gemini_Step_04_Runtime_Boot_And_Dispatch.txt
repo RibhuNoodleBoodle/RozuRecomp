@@ -65,15 +65,24 @@ Check `/mnt/6421-8598/building/RozuRecomp/out/m04_boot.log`:
 - `ctest` passes 100% of unit tests.
 
 [GIT COMMIT GATE]
+1. Stage and commit the M04 runtime/config changes:
 ```bash
-git add ps2xRuntime/ ps2xTest/ config/ handoff.txt
+git add ps2xRuntime/ ps2xTest/ config/
 git commit -m "feat(runtime): boot SLUS_214.48 through global ctors into MagSystem main loop"
+M04_SHA=$(git rev-parse HEAD)
+echo "M04_SHA=$M04_SHA"
 ```
 
 [HANDOFF.TXT UPDATE]
-Update `/mnt/6421-8598/building/RozuRecomp/handoff.txt`:
-- Mark `M04` as `DONE` with the commit SHA and verified boot trace milestones.
-- Set `Next Milestone to Run: M05` (`gemini_flash/Gemini_Step_05_IOP_IRX_CDVD_And_RPC.txt`).
+**MANDATORY**: Immediately write/update `/mnt/6421-8598/building/RozuRecomp/handoff.txt` after completing Milestone M04:
+1. Mark `M04` as `DONE` with the exact 40-character commit SHA (`$M04_SHA`).
+2. Record the verified boot trace (`_start` -> `__do_global_ctors` -> `main` -> `bedInitSystem` -> `MagSystem::initialize` -> `MagSystem::run` -> `MagSystem::update`), missing-function count (`0`), and VSync wakeup count.
+3. Set `Next Milestone to Run: M05 (gemini_flash/Gemini_Step_05_IOP_IRX_CDVD_And_RPC.txt)`.
+4. Stage and commit `handoff.txt`:
+```bash
+git add handoff.txt
+git commit -m "docs(handoff): write handoff.txt after M04 runtime boot verification"
+```
 
 [FAILURE & RECOVERY]
 - If execution stops with `[guest-branch:missing-target]`, read `target=0x...` from `out/m04_boot.log`, add that function boundary to `config/slus_21448.toml`, re-run `ps2xRecomp`, and re-link.

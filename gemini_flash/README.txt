@@ -24,6 +24,17 @@ memory. You must execute them in strict numerical order (`Step_00` -> `Step_12`)
   3) Cap parallel C++ compilation at `ninja -j2` to prevent Linux OOM kills.
   4) NEVER stage or commit `Rule of Rose (USA).iso`, `SLUS_214.48`, `*.IRX`,
      `*.IMG`, `*.RPK`, `*.PSS`, `*.STR`, or anything under `out/`.
+  5) **WRITE `handoff.txt` AFTER EVERY MAJOR MILESTONE (MANDATORY)**:
+     At the end of EVERY milestone (`M00` through `M12`) and after any recovery
+     session, you MUST write/update `/mnt/6421-8598/building/RozuRecomp/handoff.txt`
+     with:
+     - The completed milestone ID (`MXX = DONE`) and its exact 40-char commit SHA
+       (`git rev-parse HEAD`).
+     - Exact commands executed, test counts, frame/audio/heap/RSS metrics, and
+       files changed.
+     - The exact next milestone prompt file to run.
+     - Then commit `handoff.txt` (`docs(handoff): update ledger after MXX`) so
+       both disk and Git history always have the latest `handoff.txt`.
 
 3. SEQUENTIAL WORK ORDER TABLE
 ------------------------------

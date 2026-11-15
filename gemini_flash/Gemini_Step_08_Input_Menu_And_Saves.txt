@@ -76,15 +76,24 @@ Run the automated title-menu input test and verify captured frames before and af
 - Memory Card (`out/mc0/`) queries (`sceMcGetInfo`, `sceMcGetDir`, `sceMcOpen`, `sceMcWrite`) succeed with `0` errors.
 
 [GIT COMMIT GATE]
+1. Stage and commit the M08 `libpad2`/`libdbc`/`libvib` and `mc0` changes:
 ```bash
-git add ps2xRuntime/ ps2xTest/ handoff.txt
+git add ps2xRuntime/ ps2xTest/
 git commit -m "feat(input): implement libpad2/libdbc/libvib HLE handlers for BedPad and verify mc0 saves"
+M08_SHA=$(git rev-parse HEAD)
+echo "M08_SHA=$M08_SHA"
 ```
 
 [HANDOFF.TXT UPDATE]
-Update `/mnt/6421-8598/building/RozuRecomp/handoff.txt`:
-- Mark `M08` as `DONE` with the commit SHA, verified `scePad2*` call counts, and `mc0` save verification status.
-- Set `Next Milestone to Run: M09` (`gemini_flash/Gemini_Step_09_First_Playable_Gameplay.txt`).
+**MANDATORY**: Immediately write/update `/mnt/6421-8598/building/RozuRecomp/handoff.txt` after completing Milestone M08:
+1. Mark `M08` as `DONE` with the exact 40-character commit SHA (`$M08_SHA`).
+2. Record `scePad2*` call counts, Title Screen menu navigation frame diff, and `out/mc0/` save file verification.
+3. Set `Next Milestone to Run: M09 (gemini_flash/Gemini_Step_09_First_Playable_Gameplay.txt)`.
+4. Stage and commit `handoff.txt`:
+```bash
+git add handoff.txt
+git commit -m "docs(handoff): write handoff.txt after M08 input and save verification"
+```
 
 [FAILURE & RECOVERY]
 - If `BedPad::update` ignores button presses, check whether `BedPad` reads the 12 pressure bytes (`rawData[8..19]`) or the 16-bit active-low bitmask (`rawData[2..3]`), and ensure `fillPadStatus` in `Pad.cpp` populates both when `scePad2Read` is called.

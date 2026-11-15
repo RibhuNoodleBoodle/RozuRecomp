@@ -67,15 +67,24 @@ Analyze `/mnt/6421-8598/building/RozuRecomp/out/m10_soak.log`:
 - `ctest` passes 100% of unit tests.
 
 [GIT COMMIT GATE]
+1. Stage and commit the M10 soak test and stability changes:
 ```bash
-git add ps2xRuntime/ ps2xIOP/ ps2xTest/ config/ handoff.txt
+git add ps2xRuntime/ ps2xIOP/ ps2xTest/ config/
 git commit -m "test(soak): validate 30-minute gameplay stability across room transitions and menus"
+M10_SHA=$(git rev-parse HEAD)
+echo "M10_SHA=$M10_SHA"
 ```
 
 [HANDOFF.TXT UPDATE]
-Update `/mnt/6421-8598/building/RozuRecomp/handoff.txt`:
-- Mark `M10` as `DONE` with the commit SHA, total frames completed (`>= 54,000`), guest heap high-water mark, and host RSS at minute 5 vs minute 30.
-- Set `Next Milestone to Run: M11` (`gemini_flash/Gemini_Step_11_Intel_HD620_Optimization.txt`).
+**MANDATORY**: Immediately write/update `/mnt/6421-8598/building/RozuRecomp/handoff.txt` after completing Milestone M10:
+1. Mark `M10` as `DONE` with the exact 40-character commit SHA (`$M10_SHA`).
+2. Record total guest frames completed (`>= 54,000`), guest heap high-water mark (`< 0x01E00000`), and host RSS at minute 5 vs minute 30 (`< 5%` growth).
+3. Set `Next Milestone to Run: M11 (gemini_flash/Gemini_Step_11_Intel_HD620_Optimization.txt)`.
+4. Stage and commit `handoff.txt`:
+```bash
+git add handoff.txt
+git commit -m "docs(handoff): write handoff.txt after M10 30-minute soak verification"
+```
 
 [FAILURE & RECOVERY]
 - If a new function boundary is hit during a late-stage room transition or enemy AI state, add it to `config/slus_21448.toml`, re-run `ps2xRecomp`, re-link, and re-run the soak test.

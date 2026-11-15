@@ -59,15 +59,24 @@ Run the M09 gameplay script and verify on `/mnt/6421-8598/building/RozuRecomp/ou
 - `ctest` passes 100% of unit tests.
 
 [GIT COMMIT GATE]
+1. Stage and commit the M09 gameplay/script/config changes:
 ```bash
-git add ps2xRuntime/ ps2xTest/ config/ handoff.txt
+git add ps2xRuntime/ ps2xTest/ config/
 git commit -m "feat(gameplay): achieve first playable 3D gameplay and ELFR101 script progression"
+M09_SHA=$(git rev-parse HEAD)
+echo "M09_SHA=$M09_SHA"
 ```
 
 [HANDOFF.TXT UPDATE]
-Update `/mnt/6421-8598/building/RozuRecomp/handoff.txt`:
-- Mark `M09` as `DONE` with the commit SHA, Stage 01 files loaded, VU1 cycle counts, and 3D gameplay frame metrics.
-- Set `Next Milestone to Run: M10` (`gemini_flash/Gemini_Step_10_Sustained_Gameplay_Testing.txt`).
+**MANDATORY**: Immediately write/update `/mnt/6421-8598/building/RozuRecomp/handoff.txt` after completing Milestone M09:
+1. Mark `M09` as `DONE` with the exact 40-character commit SHA (`$M09_SHA`).
+2. Record the Stage 01 `.RPK` files loaded, `CSequenceCode::update` `ELFR101` execution status, VU1 cycle counts, and 3D gameplay frame diff metrics during analog stick movement.
+3. Set `Next Milestone to Run: M10 (gemini_flash/Gemini_Step_10_Sustained_Gameplay_Testing.txt)`.
+4. Stage and commit `handoff.txt`:
+```bash
+git add handoff.txt
+git commit -m "docs(handoff): write handoff.txt after M09 first playable gameplay verification"
+```
 
 [FAILURE & RECOVERY]
 - If a 3D mesh renders with corrupted Z-order, verify `SCE_GS_ZGEQUAL` (`PSMZ16S`) depth test direction in `gs_cpu_backend.cpp`.

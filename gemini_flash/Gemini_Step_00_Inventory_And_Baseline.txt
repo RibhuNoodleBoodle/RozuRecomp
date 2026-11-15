@@ -107,16 +107,24 @@ EOF
 - `df -BM /` reports `>= 900M` free on `/`.
 
 [GIT COMMIT GATE]
-Stage ONLY `.gitignore` and `handoff.txt`:
+1. Stage ONLY `.gitignore` and commit the M00 deliverable:
 ```bash
-git add .gitignore handoff.txt
+git add .gitignore
 git commit -m "chore(repo): harden gitignore for game media and build outputs"
+M00_SHA=$(git rev-parse HEAD)
+echo "M00_SHA=$M00_SHA"
 ```
 
 [HANDOFF.TXT UPDATE]
-Update `/mnt/6421-8598/building/RozuRecomp/handoff.txt`:
-- Mark `M00` as `DONE` with the exact full commit SHA.
-- Set `Next Milestone to Run: M01` (`gemini_flash/Gemini_Step_01_Upstream_Toolchain_And_Tests.txt`).
+**MANDATORY**: Immediately write/update `/mnt/6421-8598/building/RozuRecomp/handoff.txt` after completing Milestone M00:
+1. Record `M00` status as `DONE` with the exact 40-character commit SHA (`$M00_SHA`).
+2. Record the verified `SLUS_214.48` SHA-256, SHA-1, CRC32 (`0x8cf7b024`), extracted file count in `out/disc/`, and free disk space on `/` and `/mnt/6421-8598`.
+3. Set `Next Milestone to Run: M01 (gemini_flash/Gemini_Step_01_Upstream_Toolchain_And_Tests.txt)`.
+4. Commit the updated `handoff.txt`:
+```bash
+git add handoff.txt
+git commit -m "docs(handoff): write handoff.txt after M00 baseline verification"
+```
 
 [FAILURE & RECOVERY]
 If `7z` fails with disk space errors, check `df -h /` and `df -h /mnt/6421-8598` and ensure `-o"/mnt/6421-8598/building/RozuRecomp/out/disc"` was passed without spaces after `-o`. Consult `gemini_flash/Gemini_Recovery_And_Debugging.txt`.

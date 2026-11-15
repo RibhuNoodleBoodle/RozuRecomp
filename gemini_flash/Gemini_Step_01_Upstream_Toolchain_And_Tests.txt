@@ -72,16 +72,18 @@ df -BM / /mnt/6421-8598
 - Free space on `/` remains `>= 900 MiB`.
 
 [GIT COMMIT GATE]
-Update `handoff.txt` and commit:
-```bash
-git add handoff.txt
-git commit -m "docs(handoff): record M01 upstream toolchain build and test verification"
-```
+1. If any tracked CMake/build files were adjusted, commit them first and capture `M01_SHA=$(git rev-parse HEAD)` (otherwise record the current `HEAD` SHA as `M01_SHA`).
 
 [HANDOFF.TXT UPDATE]
-Update `/mnt/6421-8598/building/RozuRecomp/handoff.txt`:
-- Mark `M01` as `DONE` with the commit SHA, total `ctest` count passed, and peak RSS.
-- Set `Next Milestone to Run: M02` (`gemini_flash/Gemini_Step_02_Ghidra_And_Function_Map.txt`).
+**MANDATORY**: Immediately write/update `/mnt/6421-8598/building/RozuRecomp/handoff.txt` after completing Milestone M01:
+1. Mark `M01` as `DONE` with the exact 40-character commit SHA (`$M01_SHA`).
+2. Record the total `ctest` count passed (`100%`), build wall-clock time, peak RSS (`< 6.0 GiB`), and `/` free space (`>= 900 MiB`).
+3. Set `Next Milestone to Run: M02 (gemini_flash/Gemini_Step_02_Ghidra_And_Function_Map.txt)`.
+4. Stage and commit `handoff.txt`:
+```bash
+git add handoff.txt
+git commit -m "docs(handoff): write handoff.txt after M01 upstream toolchain and test verification"
+```
 
 [FAILURE & RECOVERY]
 - If a FetchContent git clone fails transiently due to network timeout, re-run the `cmake` configure command.

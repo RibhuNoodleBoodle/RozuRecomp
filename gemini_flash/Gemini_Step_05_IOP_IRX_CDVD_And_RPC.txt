@@ -74,15 +74,24 @@ ctest --test-dir /mnt/6421-8598/building/RozuRecomp/out/build/baseline --output-
 - `ctest` passes 100% of unit tests.
 
 [GIT COMMIT GATE]
+1. Stage and commit the M05 IOP/VFS/CDVD changes:
 ```bash
-git add ps2xIOP/ ps2xRuntime/ ps2xTest/ handoff.txt
+git add ps2xIOP/ ps2xRuntime/ ps2xTest/
 git commit -m "feat(iop): support SLUS_214.48 IOPCONF module sequence and case-insensitive CDVD paths"
+M05_SHA=$(git rev-parse HEAD)
+echo "M05_SHA=$M05_SHA"
 ```
 
 [HANDOFF.TXT UPDATE]
-Update `/mnt/6421-8598/building/RozuRecomp/handoff.txt`:
-- Mark `M05` as `DONE` with the commit SHA, list of loaded IRX module IDs, and first `.RPK` files read.
-- Set `Next Milestone to Run: M06` (`gemini_flash/Gemini_Step_06_GS_VU_Graphics.txt`).
+**MANDATORY**: Immediately write/update `/mnt/6421-8598/building/RozuRecomp/handoff.txt` after completing Milestone M05:
+1. Mark `M05` as `DONE` with the exact 40-character commit SHA (`$M05_SHA`).
+2. Record the loaded module IDs for all 8 `.IRX` modules in `IOPCONF.CNF`, the `.RPK` archives read via CDVD, and `ctest` pass status.
+3. Set `Next Milestone to Run: M06 (gemini_flash/Gemini_Step_06_GS_VU_Graphics.txt)`.
+4. Stage and commit `handoff.txt`:
+```bash
+git add handoff.txt
+git commit -m "docs(handoff): write handoff.txt after M05 IOP and CDVD verification"
+```
 
 [FAILURE & RECOVERY]
 - If `sceSifBindRpc` hangs waiting for a custom SID registered by `RXSNDDRV.IRX`, check `IopEmulator` logs in `out/m05_iop.log` to see what SID `RXSNDDRV.IRX` passed to `sceSifRegisterRpc` (import `sifcmd:17`), or register an HLE service for that SID in `ps2xIOP`.
