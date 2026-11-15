@@ -145,6 +145,8 @@ namespace
         std::string elfArg;
         std::string cdImageArg;
         std::string cdRootArg;
+        std::string dumpFramesDirArg;
+        uint32_t dumpEveryNFrames = 30u;
         uint64_t maxFrames = 0u;
         double maxSeconds = 0.0;
     };
@@ -187,9 +189,26 @@ namespace
                 }
                 opts.maxSeconds = std::stod(argv[++i]);
             }
+            else if (arg == "--dump-frames-dir")
+            {
+                if (i + 1 >= argc)
+                {
+                    throw std::runtime_error("Missing value for --dump-frames-dir");
+                }
+                opts.dumpFramesDirArg = argv[++i];
+            }
+            else if (arg == "--dump-every-n-frames")
+            {
+                if (i + 1 >= argc)
+                {
+                    throw std::runtime_error("Missing value for --dump-every-n-frames");
+                }
+                const long long val = std::stoll(argv[++i]);
+                opts.dumpEveryNFrames = val > 0 ? static_cast<uint32_t>(val) : 1u;
+            }
             else if (arg == "--help" || arg == "-h")
             {
-                std::cout << "Usage: ps2EntryRunner [<guest_elf>] [--cd-image <iso>] [--cd-root <dir>] [--max-frames <N>] [--max-seconds <S>]\n";
+                std::cout << "Usage: ps2EntryRunner [<guest_elf>] [--cd-image <iso>] [--cd-root <dir>] [--max-frames <N>] [--max-seconds <S>] [--dump-frames-dir <dir>] [--dump-every-n-frames <N>]\n";
                 std::exit(0);
             }
             else if (!arg.empty() && arg[0] != '-' && opts.elfArg.empty())
@@ -257,6 +276,10 @@ int main(int argc, char *argv[])
         PS2Runtime runtime;
         runtime.setMaxFrames(cliOpts.maxFrames);
         runtime.setMaxSeconds(cliOpts.maxSeconds);
+        if (!cliOpts.dumpFramesDirArg.empty())
+        {
+            runtime.setDumpFramesConfig(cliOpts.dumpFramesDirArg, cliOpts.dumpEveryNFrames);
+        }
 #if defined(PS2X_ENABLE_DEBUG_UI) && !defined(PLATFORM_VITA)
         // This hook is to prevent leak rlimgui deps to recompiler etc
         PS2DebugPanel debugPanel;

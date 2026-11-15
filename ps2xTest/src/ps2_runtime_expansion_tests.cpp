@@ -173,6 +173,43 @@ namespace
         gGuestJumpTargetCount.fetch_add(1u, std::memory_order_relaxed);
     }
 
+    std::atomic<uint32_t> gRecursiveYieldDepth{0u};
+
+    void testGuestRecursiveYieldHandler(uint8_t *rdram, R5900Context *ctx, PS2Runtime *runtime)
+    {
+        const uint32_t depth = gRecursiveYieldDepth.fetch_add(1u, std::memory_order_relaxed);
+        if (depth == 0u)
+        {
+            if (!runtime->dispatchGuestBranch(
+                    rdram,
+                    ctx,
+                    0x3200u,
+                    0x3210u,
+                    0x3218u,
+                    PS2Runtime::GuestBranchKind::DirectCall,
+                    "test-recursive-jal"))
+            {
+                return;
+            }
+            ctx->pc = 0x99990000u;
+            return;
+        }
+
+        runtime->postEeEvent(EeEvent{});
+        if (!runtime->dispatchGuestBranch(
+                rdram,
+                ctx,
+                0x3200u,
+                0x3220u,
+                0x3228u,
+                PS2Runtime::GuestBranchKind::DirectCall,
+                "test-recursive-yield-jal"))
+        {
+            return;
+        }
+        ctx->pc = 0x88880000u;
+    }
+
     std::atomic<uint32_t> gMpegStreamCallbackCount{0u};
     std::atomic<uint32_t> gMpegStreamCallbackMpeg{0u};
     std::atomic<uint32_t> gMpegStreamCallbackType{0u};
@@ -453,6 +490,32 @@ void register_ps2_runtime_expansion_tests()
                       "call-like dispatch should stop caller flow when callee transfers elsewhere");
             t.Equals(ctx.pc, 0x33330000u,
                      "callee transfer PC should be preserved");
+        });
+
+        tc.Run("dispatchGuestBranch preserves recursive target PC when nested call yields at checkpoint", [](TestCase &t)
+        {
+            PS2Runtime runtime;
+            runtime.registerFunction(0x3200u, &testGuestRecursiveYieldHandler);
+            gRecursiveYieldDepth.store(0u, std::memory_order_relaxed);
+
+            R5900Context ctx{};
+            ctx.pc = 0x2000u;
+
+            const bool returnedToFallthrough = runtime.dispatchGuestBranch(
+                nullptr,
+                &ctx,
+                0x3200u,
+                0x2000u,
+                0x2008u,
+                PS2Runtime::GuestBranchKind::DirectCall,
+                "test-outer-jal");
+
+            t.IsFalse(returnedToFallthrough,
+                      "recursive checkpoint yield must unwind to scheduler without resuming caller fallthrough");
+            t.Equals(ctx.pc, 0x3200u,
+                     "nested checkpoint yield target PC must be preserved even when it matches enclosing callee entryPc");
+            t.Equals(gRecursiveYieldDepth.load(std::memory_order_relaxed), 2u,
+                     "test handler should have unwound cleanly after the second recursive level");
         });
 
         tc.Run("dispatchGuestBranch rejects missing exact targets", [](TestCase &t)

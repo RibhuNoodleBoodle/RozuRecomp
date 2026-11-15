@@ -392,6 +392,7 @@ public:
     bool isStopRequested() const;
     void setMaxFrames(uint64_t maxFrames);
     void setMaxSeconds(double maxSeconds);
+    void setDumpFramesConfig(std::filesystem::path dir, uint32_t everyNFrames);
 
     EeScheduler &eeScheduler();
     const EeScheduler &eeScheduler() const;
@@ -522,8 +523,16 @@ private:
     std::atomic<uint32_t> m_missingFunctionPolicy{static_cast<uint32_t>(MissingFunctionPolicy::ContinueToTarget)};
     std::atomic<bool> m_missingFunctionReported{false};
     std::atomic<bool> m_stopRequested{false};
+    std::atomic<bool> m_guestYieldUnwinding{false};
+
+    void clearGuestYieldUnwinding() noexcept
+    {
+        m_guestYieldUnwinding.store(false, std::memory_order_relaxed);
+    }
     uint64_t m_maxFrames = 0u;
     double m_maxSeconds = 0.0;
+    std::filesystem::path m_dumpFramesDir;
+    uint32_t m_dumpEveryNFrames = 30u;
     DebugUiCallback m_debugUiInitCallback = nullptr;
     DebugUiCallback m_debugUiDrawCallback = nullptr;
     DebugUiCallback m_debugUiShutdownCallback = nullptr;

@@ -4035,6 +4035,110 @@ void register_ps2_gs_tests()
             }
         });
 
+        tc.Run("sceGsExecLoadImage and sceGsExecStoreImage preserve nonzero 64-word block vram_addr", [](TestCase &t)
+        {
+            PS2Runtime runtime;
+            t.IsTrue(runtime.memory().initialize(), "runtime memory initialize should succeed");
+            uint8_t *const rdram = runtime.memory().getRDRAM();
+            constexpr uint32_t kImageAddr = 0x4000u;
+            constexpr uint32_t kSrcAddr = 0x5000u;
+            constexpr uint32_t kDstAddr = 0x6000u;
+            constexpr uint16_t kBlockAddr = 0x0120u; // GS 64-word block index, must NOT be shifted again by >> 6
+
+            const GsImageMem image{0u, 0u, 2u, 2u, kBlockAddr, 1u, 0u};
+            const uint8_t pixels[16] = {
+                0x11u, 0x22u, 0x33u, 0x44u,
+                0x55u, 0x66u, 0x77u, 0x88u,
+                0x99u, 0xAAu, 0xBBu, 0xCCu,
+                0xDDu, 0xEEu, 0xFFu, 0x01u,
+            };
+
+            writeGsImageTest(rdram, kImageAddr, image);
+            std::memcpy(rdram + kSrcAddr, pixels, sizeof(pixels));
+
+            R5900Context loadCtx{};
+            setRegU32(loadCtx, 4, kImageAddr);
+            setRegU32(loadCtx, 5, kSrcAddr);
+            ps2_stubs::sceGsExecLoadImage(rdram, &loadCtx, &runtime);
+            t.Equals(static_cast<int32_t>(getRegU32Test(loadCtx, 2)), 0,
+                     "sceGsExecLoadImage should succeed with nonzero vram_addr");
+
+            uint64_t loadBitblt = 0u;
+            std::memcpy(&loadBitblt, rdram + runtime.guestHeapBase() + 16u, sizeof(loadBitblt));
+            const uint32_t encodedDbp = static_cast<uint32_t>((loadBitblt >> 32) & 0x3FFFull);
+            t.Equals(encodedDbp, static_cast<uint32_t>(kBlockAddr),
+                     "sceGsExecLoadImage BITBLTBUF DBP must keep 64-word vram_addr intact");
+
+            R5900Context storeCtx{};
+            setRegU32(storeCtx, 4, kImageAddr);
+            setRegU32(storeCtx, 5, kDstAddr);
+            ps2_stubs::sceGsExecStoreImage(rdram, &storeCtx, &runtime);
+            t.Equals(static_cast<int32_t>(getRegU32Test(storeCtx, 2)), 0,
+                     "sceGsExecStoreImage should succeed with nonzero vram_addr");
+
+            uint64_t storeBitblt = 0u;
+            std::memcpy(&storeBitblt, rdram + runtime.guestHeapBase() + 16u, sizeof(storeBitblt));
+            const uint32_t encodedSbp = static_cast<uint32_t>(storeBitblt & 0x3FFFull);
+            t.Equals(encodedSbp, static_cast<uint32_t>(kBlockAddr),
+                     "sceGsExecStoreImage BITBLTBUF SBP must keep 64-word vram_addr intact");
+
+            for (size_t i = 0; i < sizeof(pixels); ++i)
+            {
+                t.Equals(rdram[kDstAddr + i], pixels[i],
+                         "nonzero vram_addr load/store roundtrip must match byte-for-byte");
+            }
+        });
+
+        tc.Run("sceGsExecLoadImage and sceGsExecStoreImage use host Path3 fallback when guest heap is exhausted", [](TestCase &t)
+        {
+            PS2Runtime runtime;
+            t.IsTrue(runtime.memory().initialize(), "runtime memory initialize should succeed");
+            uint8_t *const rdram = runtime.memory().getRDRAM();
+            constexpr uint32_t kImageAddr = 0x4000u;
+            constexpr uint32_t kSrcAddr = 0x5000u;
+            constexpr uint32_t kDstAddr = 0x6000u;
+
+            // Exhaust the entire runtime guest heap so temporary GIF allocation returns 0.
+            while (runtime.guestMalloc(1024u, 16u) != 0u)
+            {
+            }
+            while (runtime.guestMalloc(16u, 16u) != 0u)
+            {
+            }
+            t.Equals(runtime.guestMalloc(16u, 16u), 0u,
+                     "guestMalloc should return 0 once runtime guest heap is exhausted");
+
+            const GsImageMem image{0u, 0u, 2u, 2u, 0x0080u, 1u, 0u};
+            const uint8_t pixels[16] = {
+                0xA1u, 0xB2u, 0xC3u, 0xD4u,
+                0xE5u, 0xF6u, 0x07u, 0x18u,
+                0x29u, 0x3Au, 0x4Bu, 0x5Cu,
+                0x6Du, 0x7Eu, 0x8Fu, 0x90u,
+            };
+            writeGsImageTest(rdram, kImageAddr, image);
+            std::memcpy(rdram + kSrcAddr, pixels, sizeof(pixels));
+
+            R5900Context loadCtx{};
+            setRegU32(loadCtx, 4, kImageAddr);
+            setRegU32(loadCtx, 5, kSrcAddr);
+            ps2_stubs::sceGsExecLoadImage(rdram, &loadCtx, &runtime);
+            t.Equals(static_cast<int32_t>(getRegU32Test(loadCtx, 2)), 0,
+                     "sceGsExecLoadImage should succeed via host Path3 fallback when guestMalloc returns 0");
+
+            R5900Context storeCtx{};
+            setRegU32(storeCtx, 4, kImageAddr);
+            setRegU32(storeCtx, 5, kDstAddr);
+            ps2_stubs::sceGsExecStoreImage(rdram, &storeCtx, &runtime);
+            t.Equals(static_cast<int32_t>(getRegU32Test(storeCtx, 2)), 0,
+                     "sceGsExecStoreImage should succeed via host Path3 fallback when guestMalloc returns 0");
+
+            for (size_t i = 0; i < sizeof(pixels); ++i)
+            {
+                t.Equals(rdram[kDstAddr + i], pixels[i],
+                         "host Path3 fallback roundtrip must preserve pixel bytes");
+            }
+        });
+
         tc.Run("sceGifPkRefLoadImage seeds A+D GIFtag nloop once (no double-count)", [](TestCase &t)
         {
             std::vector<uint8_t> rdram(PS2_RAM_SIZE, 0u);

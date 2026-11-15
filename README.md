@@ -1,7 +1,7 @@
 # RozuRecomp — Rule of Rose (`SLUS-21448`) Static Recompilation
 
 > [!NOTE]
-> **Status (`2026-11-15`):** In progress — **Milestones M00–M05 complete**, next up **Milestone M06 (`GS & VU Graphics`)**.
+> **Status (`2026-11-16`):** In progress — **Milestones M00–M06 complete**, next up **Milestone M07 (`Movies & Audio`)**.
 > Target release: **Rule of Rose (USA, `SLUS-21448`, `VER = 1.00`, CRC32 `0x8cf7b024`)**, built on [`ran-j/PS2Recomp`](https://github.com/ran-j/PS2Recomp) (`e5636981a1c9de368f6b71e819c3dc188dfedbf4`).
 
 ---
@@ -17,8 +17,8 @@
 | M02 | Function Map & `.vutext` Exclusion | **DONE** | `6ad9152f95c05da221197f70aed4914da5be13e2` | Excluded `.vutext` (`[0x00291230, 0x002953B0)`) / `.vudata` / `.DVP.*` in `ElfParser`, synthesized `.gnu.linkonce.t.*` boundaries, and generated `config/slus_21448.{csv,toml}` via `tools/generate_slus21448_toml.py`: `8,983` functions (`7,534` `.text` + `1,449` `.gnu.linkonce.t.*`, `228` stubs, `439` entries, `171` jump tables); `491/491` tests passing. |
 | M03 | Static Recompilation Integration | **DONE** | `737466feda6602d45f4377e875f4bc9ca16f20f5` | Recompiled `8,983` functions (`0` unhandled, `0` errors) into `out/recomp/`, integrated `64`-batch unity compilation (`PS2X_RECOMP_OUTPUT_DIR`) into `ps2xRuntime/CMakeLists.txt`, and linked `38M` `ps2EntryRunner` (`889.6s`, `1.59 GiB` peak RSS); `491/491` tests passing. |
 | M04 | Runtime Boot & Dispatch | **DONE** | `6f335bb22052c0550bb034e01e5c9012c36ed847` | Booted `SLUS_214.48` through `0x100008` -> SIF RPC + all 8 IOP `.IRX` modules + `RXSNDDRV.IRX`, fixed kernel/alarm/stack/interrupt scheduling, added `libcdvd` HLE bindings + `--cd-image` / ISO auto-wiring, fixed function-map splits (`9,078` functions, `0` errors), entered main engine loop (`0x2051e8`), and rendered 512x448 GS frames (`dma=10`, `gif=6`, `vif=2`, `vsyncTicks=29`, `missingFunction=0`); `491/491` tests passing. |
-| M05 | IOP IRX, CDVD & RPC | **DONE** | *This commit* | Implemented multi-level case-insensitive path resolution in [`PS2Vfs::resolveHostPath`](ps2xRuntime/src/lib/ps2_vfs.cpp) (preserving `O_CREAT` parents), wired `sceCdCallback` state/dispatch across N-cmds in [`CD.cpp`](ps2xRuntime/src/lib/Kernel/Stubs/CD.cpp), added `PS2Vfs` & `IOPCONF.CNF` & `sceCdCallback` tests (`45/45` `ctest` + `449/449` `ps2x_tests` = `494/494`), and verified clean 60s boot loading all 8 `.IRX` modules (`id=1..8`), `RXSNDDRV.IRX` DMA/RPC, `dma=22`, `gif=18`, `vif=2`, `vsyncTicks=41`, `missingFunction=0`. |
-| M06 | GS & VU Graphics | **TODO** | - | VIF1/GIF DMA sync, 44 `.vutext` `.DVP.overlay` VU1 uploads, `512x448` / `512x384` boot logos & title screen. |
+| M05 | IOP IRX, CDVD & RPC | **DONE** | `c9f58a863429b6315f3e2b130f00fe5b35cbb21c` | Implemented multi-level case-insensitive path resolution in [`PS2Vfs::resolveHostPath`](ps2xRuntime/src/lib/ps2_vfs.cpp) (preserving `O_CREAT` parents), wired `sceCdCallback` state/dispatch across N-cmds in [`CD.cpp`](ps2xRuntime/src/lib/Kernel/Stubs/CD.cpp), added `PS2Vfs` & `IOPCONF.CNF` & `sceCdCallback` tests (`45/45` `ctest` + `449/449` `ps2x_tests` = `494/494`), and verified clean 60s boot loading all 8 `.IRX` modules (`id=1..8`), `RXSNDDRV.IRX` DMA/RPC, `dma=22`, `gif=18`, `vif=2`, `vsyncTicks=41`, `missingFunction=0`. |
+| M06 | GS & VU Graphics | **DONE** | *This commit* | Fixed GS `vram_addr` (`dbp`/`sbp`) block units in `sceGsExecLoadImage`/`StoreImage` + host Path3 GIF fallback ([`GS.cpp`](ps2xRuntime/src/lib/Kernel/Stubs/GS.cpp), [`ps2_memory.cpp`](ps2xRuntime/src/lib/ps2_memory.cpp)), fixed recursive `dispatchGuestBranch` checkpoint-yield unwinding ([`ps2_runtime.cpp`](ps2xRuntime/src/lib/ps2_runtime.cpp)), batched EE/IOP timer accounting + defaulted `PS2X_ENABLE_AGRESSIVE_LOGS=OFF`, added GS/yield tests (`45/45` `ctest` + `452/452` `ps2x_tests` = `497/497`), and rendered 600-frame `512x448` `"* Now Loading"` + `"Sony Computer Entertainment Inc."` frames (`dma=474`, `gif=225`, `vif=2`, `vu1Cycles=25970`, `missingFunction=0`). |
 | M07 | Movies & Audio | **TODO** | - | `MOVIE/*.PSS` MPEG-2 playback (staging FFmpeg headers in `out/deps/`) and `LIBSD.IRX` / `RXSNDDRV.IRX` `.STR` streaming. |
 | M08 | Input, Menu & Saves | **TODO** | - | `libpad2` / `libdbc` / `libvib` handlers for `BedPad` (`0x00101AEC`) and `mc0` (`BASLUS-21448*`) save/load. |
 | M09 | First Playable Gameplay | **TODO** | - | New Game boot into `STAGE01` interactive 3D gameplay via `ELFR101` / `CSequenceCode::update` (`0x001AE7C8`). |
@@ -26,7 +26,18 @@
 | M11 | Intel HD 620 Optimization | **TODO** | - | 30 Hz `UploadFrame()` gating + SIMD `GSCpuBackend` targeting `<= 33.4 ms` median frame time. |
 | M12 | Packaging & Regression | **TODO** | - | Full `ctest` + regression suite verification, Git cleanliness audit, and final `handoff.txt`. |
 
-### Current M05 Runtime & Test Changes (`494/494` Tests Passing)
+### Current M06 GS, VU1 & Runtime Verification (`497/497` Tests Passing)
+
+- **GS Texture Upload/Readback & Host Path3 Fallback ([`GS.cpp`](ps2xRuntime/src/lib/Kernel/Stubs/GS.cpp), [`ps2_memory.cpp`](ps2xRuntime/src/lib/ps2_memory.cpp))**:
+  - Removed erroneous `>> 6` shift on `img.vram_addr` in `sceGsExecLoadImage` / `sceGsExecStoreImage` (it is already in GS 64-word block units), and added `PS2Memory::submitHostGifPacket` fallback when the guest heap is fully claimed by the engine arena.
+- **Recursive Branch Yield Unwinding & Runtime Throughput ([`ps2_runtime.cpp`](ps2xRuntime/src/lib/ps2_runtime.cpp), [`EeScheduler.cpp`](ps2xRuntime/src/lib/Kernel/EeScheduler.cpp), [`ps2xRuntime/CMakeLists.txt`](ps2xRuntime/CMakeLists.txt))**:
+  - Tracked active checkpoint yields (`m_guestYieldUnwinding`) across nested `dispatchGuestBranch` / `eeCheckpointDue` calls so yielding on a recursive entry address unwinds to `EeScheduler` instead of falling through onto stale frames.
+  - Batched IOP/EE timer advances (`kTimingBatchCycles = 2048` with safe flush in `iopDebugSnapshot`) and defaulted `PS2X_ENABLE_AGRESSIVE_LOGS=OFF`, eliminating per-call `ps2_log.txt` disk flushes (~35x speedup).
+- **Unit & 600-Frame Live Capture**:
+  - Added tests in [`ps2_gs_tests.cpp`](ps2xTest/src/ps2_gs_tests.cpp) and [`ps2_runtime_expansion_tests.cpp`](ps2xTest/src/ps2_runtime_expansion_tests.cpp); `ctest` (`45/45`) and `ps2x_tests` (`452/452`) pass (`497/497`, 0 failures).
+  - Live `ps2EntryRunner` 600-frame capture (`out/frames_m06`, `out/m06_gs.log`) exited `0` (`vsyncTicks=600`, `hostFrames=1333`, `dma=474`, `gif=225`, `vif=2`, `vu1Cycles=25970`, `gs=512x448`, `missingFunction=0`, `is_magenta_fallback=false`), visually verified rendering `"* Now Loading"` and `"Sony Computer Entertainment Inc."` (`luminance_stddev=15.746809`).
+
+### M05 Runtime & Test Changes (`494/494` Tests Passing)
 
 - **Case-Insensitive Multi-Level VFS Resolution ([`ps2_vfs.cpp`](ps2xRuntime/src/lib/ps2_vfs.cpp))**:
   - Updated `PS2Vfs::resolveHostPath` to walk components case-insensitively on Linux ext4 when exact-case lookup misses (covering `cdrom0:\data\bg\stage01\Map.rpk;1`, `IOPCONF.CNF` lowercase module paths like `modules/pad2/ds1o_d.irx`, `host0:`, and `mc0:`), while preserving trailing non-existent components for `PS2_FIO_O_CREAT`.

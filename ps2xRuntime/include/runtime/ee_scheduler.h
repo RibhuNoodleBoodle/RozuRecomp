@@ -267,6 +267,7 @@ public:
     static constexpr uint32_t kGeneratedCheckpointCycles = 32u;
     static constexpr uint32_t kGuestDispatchCycles = 8u;
     static constexpr uint64_t kDefaultTimeSliceCycles = 65536ull;
+    static constexpr uint64_t kTimingBatchCycles = 2048ull;
 
     explicit EeScheduler(PS2Runtime &runtime);
     ~EeScheduler();
@@ -280,6 +281,12 @@ public:
     void postEvent(EeEvent event);
     [[nodiscard]] bool checkpointDue(uint32_t cycles = kGeneratedCheckpointCycles) noexcept;
     void accountCycles(uint32_t cycles) noexcept;
+    void flushTimingCycles() noexcept;
+    [[nodiscard]] bool canFlushTimingSafely() const noexcept
+    {
+        return !m_running.load(std::memory_order_acquire) ||
+               std::this_thread::get_id() == m_executorThread;
+    }
     [[nodiscard]] bool isExecutingGuest() const noexcept;
 
     // Kernel object API. All calls except postEvent/requestStop execute on the
@@ -426,6 +433,7 @@ private:
     bool m_insideInterrupt = false;
     uint32_t m_pendingEeTimerInterrupts = 0;
     uint64_t m_eeCycle = 0;
+    uint64_t m_pendingTimingCycles = 0;
     uint64_t m_sliceEndCycle = kDefaultTimeSliceCycles;
     std::thread::id m_executorThread{};
     std::atomic<bool> m_running{false};

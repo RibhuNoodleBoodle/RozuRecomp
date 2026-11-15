@@ -127,6 +127,7 @@ void EeScheduler::reset(uint8_t *rdram, const R5900Context &mainContext)
     m_sliceEndCycle = kDefaultTimeSliceCycles;
     m_stopRequested.store(false, std::memory_order_release);
     m_checkpointPending.store(false, std::memory_order_release);
+    m_runtime.clearGuestYieldUnwinding();
     m_debugPublishCountdown = 0u;
     {
         std::lock_guard lock(m_eventMutex);
@@ -136,6 +137,7 @@ void EeScheduler::reset(uint8_t *rdram, const R5900Context &mainContext)
     }
     m_eventSequence = 0;
     m_invocationSequence = 0;
+    m_pendingTimingCycles = 0;
     m_vsyncTick = 0;
     m_vsyncFlagAddress = 0;
     m_vsyncTickAddress = 0;
@@ -308,6 +310,7 @@ void EeScheduler::run()
         {
             m_insideInterrupt = hasActiveInterruptInvocation(running);
             m_guestExecuting.store(true, std::memory_order_release);
+            m_runtime.clearGuestYieldUnwinding();
             function(m_rdram, &context, &m_runtime);
             m_guestExecuting.store(false, std::memory_order_release);
             m_insideInterrupt = false;
@@ -321,9 +324,11 @@ void EeScheduler::run()
         {
             m_guestExecuting.store(false, std::memory_order_release);
             m_running.store(false, std::memory_order_release);
+            m_runtime.clearGuestYieldUnwinding();
             publishSnapshot();
             throw;
         }
+        m_runtime.clearGuestYieldUnwinding();
 
         processPendingEvents();
         if (m_rescheduleRequested && m_currentThreadId != 0 && !hasActiveInterruptInvocation(currentThread()))
@@ -373,12 +378,14 @@ bool EeScheduler::checkpointDue(uint32_t cycles) noexcept
     if (m_checkpointPending.load(std::memory_order_acquire) ||
         m_stopRequested.load(std::memory_order_acquire))
     {
+        flushTimingCycles();
         return true;
     }
 
     const uint64_t nextEventCycle = m_nextDeadlineCycle.load(std::memory_order_acquire);
     if (nextEventCycle != 0u && m_eeCycle >= nextEventCycle)
     {
+        flushTimingCycles();
         m_checkpointPending.store(true, std::memory_order_release);
         return true;
     }
@@ -393,6 +400,7 @@ bool EeScheduler::checkpointDue(uint32_t cycles) noexcept
         !hasActiveInterruptInvocation(running) &&
         hasReadyAtOrAbovePriority(running->currentPriority))
     {
+        flushTimingCycles();
         m_rescheduleRequested = true;
         m_timeSliceExpired = true;
         return true;
@@ -402,15 +410,30 @@ bool EeScheduler::checkpointDue(uint32_t cycles) noexcept
     return false;
 }
 
+void EeScheduler::flushTimingCycles() noexcept
+{
+    if (m_pendingTimingCycles == 0u)
+    {
+        return;
+    }
+    const uint64_t pending = m_pendingTimingCycles;
+    m_pendingTimingCycles = 0u;
+    m_pendingEeTimerInterrupts |= m_runtime.memory().advanceEeTimers(pending);
+    m_runtime.advanceIopEeCycles(pending);
+    if (m_pendingEeTimerInterrupts != 0u)
+    {
+        m_checkpointPending.store(true, std::memory_order_release);
+    }
+}
+
 void EeScheduler::accountCycles(uint32_t cycles) noexcept
 {
     const uint64_t elapsed = std::max<uint64_t>(1u, cycles);
     m_eeCycle += elapsed;
-    m_pendingEeTimerInterrupts |= m_runtime.memory().advanceEeTimers(elapsed);
-    m_runtime.advanceIopEeCycles(elapsed);
-    if (m_pendingEeTimerInterrupts != 0u)
+    m_pendingTimingCycles += elapsed;
+    if (m_pendingTimingCycles >= kTimingBatchCycles)
     {
-        m_checkpointPending.store(true, std::memory_order_release);
+        flushTimingCycles();
     }
 }
 
@@ -1761,6 +1784,7 @@ void EeScheduler::applyPendingPreemption()
 void EeScheduler::processPendingEvents()
 {
     assertExecutor();
+    flushTimingCycles();
     processDueDeadlines();
     const uint32_t timerInterrupts = m_pendingEeTimerInterrupts;
     m_pendingEeTimerInterrupts = 0u;
@@ -2014,6 +2038,7 @@ void EeScheduler::writeGuestU32(uint32_t address, uint32_t value)
 
 void EeScheduler::waitForEvent()
 {
+    flushTimingCycles();
     std::unique_lock lock(m_eventMutex);
     if (!m_events.empty() || m_stopRequested.load(std::memory_order_acquire))
     {

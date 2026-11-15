@@ -19,7 +19,9 @@
 #include <fstream>
 #include <algorithm>
 #include <array>
+#include <cmath>
 #include <cstring>
+#include <iomanip>
 #include <limits>
 #include <chrono>
 #include <atomic>
@@ -375,7 +377,193 @@ namespace
     }
 }
 
-static void UploadFrame(Texture2D &tex, PS2Runtime *rt, uint32_t &outWidth, uint32_t &outHeight)
+struct DumpedFrameRecord
+{
+    uint64_t vsyncTick = 0u;
+    uint64_t hostFrame = 0u;
+    std::string filename;
+    uint32_t width = 0u;
+    uint32_t height = 0u;
+    uint32_t displayFbp = 0u;
+    uint32_t sourceFbp = 0u;
+    bool usedPreferred = false;
+    bool isMagentaFallback = false;
+    double nonBlackRatio = 0.0;
+    double luminanceStddev = 0.0;
+    uint64_t dmaStarts = 0u;
+    uint64_t vifWrites = 0u;
+    uint64_t gifCopies = 0u;
+    uint64_t gsWrites = 0u;
+    uint64_t vu1Cycles = 0u;
+};
+
+static bool dumpRgbaFrameWithMetrics(const std::filesystem::path &dumpDir,
+                                     const std::vector<uint8_t> &rgba,
+                                     uint32_t width,
+                                     uint32_t height,
+                                     uint64_t vsyncTick,
+                                     uint64_t hostFrame,
+                                     uint32_t displayFbp,
+                                     uint32_t sourceFbp,
+                                     bool usedPreferred,
+                                     bool isMagentaFallback,
+                                     PS2Runtime &rt,
+                                     DumpedFrameRecord &outRecord)
+{
+    if (dumpDir.empty() || width == 0u || height == 0u || rgba.size() < static_cast<size_t>(width) * height * 4u)
+    {
+        return false;
+    }
+
+    std::error_code ec;
+    std::filesystem::create_directories(dumpDir, ec);
+    if (ec)
+    {
+        return false;
+    }
+
+    std::ostringstream nameStream;
+    nameStream << "frame_" << std::setw(6) << std::setfill('0') << vsyncTick
+               << "_host" << std::setw(6) << std::setfill('0') << hostFrame << ".png";
+    const std::string filename = nameStream.str();
+    const std::filesystem::path outPath = dumpDir / filename;
+
+    // ExportImage does not modify or free img.data.
+    Image img{};
+    img.data = const_cast<uint8_t *>(rgba.data());
+    img.width = static_cast<int>(width);
+    img.height = static_cast<int>(height);
+    img.mipmaps = 1;
+    img.format = PIXELFORMAT_UNCOMPRESSED_R8G8B8A8;
+    if (!ExportImage(img, outPath.string().c_str()))
+    {
+        return false;
+    }
+
+    const size_t pixelCount = static_cast<size_t>(width) * height;
+    size_t nonBlack = 0u;
+    size_t magentaCount = 0u;
+    double sumLum = 0.0;
+    double sumLumSq = 0.0;
+    for (size_t i = 0u; i < pixelCount; ++i)
+    {
+        const uint8_t r = rgba[i * 4u + 0u];
+        const uint8_t g = rgba[i * 4u + 1u];
+        const uint8_t b = rgba[i * 4u + 2u];
+        if (r != 0u || g != 0u || b != 0u)
+        {
+            ++nonBlack;
+        }
+        if (r == 255u && g == 0u && b == 255u)
+        {
+            ++magentaCount;
+        }
+        const double lum = 0.299 * r + 0.587 * g + 0.114 * b;
+        sumLum += lum;
+        sumLumSq += lum * lum;
+    }
+
+    const double invN = pixelCount > 0u ? (1.0 / static_cast<double>(pixelCount)) : 0.0;
+    const double mean = sumLum * invN;
+    const double variance = std::max(0.0, (sumLumSq * invN) - (mean * mean));
+
+    outRecord.vsyncTick = vsyncTick;
+    outRecord.hostFrame = hostFrame;
+    outRecord.filename = filename;
+    outRecord.width = width;
+    outRecord.height = height;
+    outRecord.displayFbp = displayFbp;
+    outRecord.sourceFbp = sourceFbp;
+    outRecord.usedPreferred = usedPreferred;
+    outRecord.isMagentaFallback = isMagentaFallback || (pixelCount > 0u && magentaCount == pixelCount);
+    outRecord.nonBlackRatio = static_cast<double>(nonBlack) * invN;
+    outRecord.luminanceStddev = std::sqrt(variance);
+    outRecord.dmaStarts = rt.memory().dmaStartCount();
+    outRecord.vifWrites = rt.memory().vifWriteCount();
+    outRecord.gifCopies = rt.memory().gifCopyCount();
+    outRecord.gsWrites = rt.memory().gsWriteCount();
+    outRecord.vu1Cycles = rt.vu1().state().cycles;
+    return true;
+}
+
+static void writeFramesSummaryJson(const std::filesystem::path &dumpDir,
+                                   const std::vector<DumpedFrameRecord> &records,
+                                   const GSDebugSnapshot &gsSnap,
+                                   PS2Runtime &rt)
+{
+    if (dumpDir.empty())
+    {
+        return;
+    }
+
+    std::error_code ec;
+    std::filesystem::create_directories(dumpDir, ec);
+    if (ec)
+    {
+        return;
+    }
+
+    std::ofstream out(dumpDir / "frames_summary.json");
+    if (!out)
+    {
+        return;
+    }
+
+    out << std::fixed << std::setprecision(6);
+    out << "{\n";
+    out << "  \"summary\": {\n";
+    out << "    \"vsync_ticks\": " << rt.memory().gs().vsyncTick.load(std::memory_order_acquire) << ",\n";
+    out << "    \"dma_starts\": " << rt.memory().dmaStartCount() << ",\n";
+    out << "    \"vif_writes\": " << rt.memory().vifWriteCount() << ",\n";
+    out << "    \"gif_copies\": " << rt.memory().gifCopyCount() << ",\n";
+    out << "    \"gs_writes\": " << rt.memory().gsWriteCount() << ",\n";
+    out << "    \"vu1_cycles\": " << rt.vu1().state().cycles << ",\n";
+    out << "    \"host_presentation_width\": " << gsSnap.hostPresentationWidth << ",\n";
+    out << "    \"host_presentation_height\": " << gsSnap.hostPresentationHeight << ",\n";
+    out << "    \"display_fbp\": " << gsSnap.hostPresentationDisplayFbp << ",\n";
+    out << "    \"has_host_presentation_frame\": " << (gsSnap.hasHostPresentationFrame ? "true" : "false") << "\n";
+    out << "  },\n";
+    out << "  \"frames\": [\n";
+    for (size_t i = 0u; i < records.size(); ++i)
+    {
+        const auto &r = records[i];
+        out << "    {\n";
+        out << "      \"vsync_tick\": " << r.vsyncTick << ",\n";
+        out << "      \"host_frame\": " << r.hostFrame << ",\n";
+        out << "      \"filename\": \"" << r.filename << "\",\n";
+        out << "      \"width\": " << r.width << ",\n";
+        out << "      \"height\": " << r.height << ",\n";
+        out << "      \"display_fbp\": " << r.displayFbp << ",\n";
+        out << "      \"source_fbp\": " << r.sourceFbp << ",\n";
+        out << "      \"used_preferred_source\": " << (r.usedPreferred ? "true" : "false") << ",\n";
+        out << "      \"is_magenta_fallback\": " << (r.isMagentaFallback ? "true" : "false") << ",\n";
+        out << "      \"non_black_ratio\": " << r.nonBlackRatio << ",\n";
+        out << "      \"luminance_stddev\": " << r.luminanceStddev << ",\n";
+        out << "      \"dma_starts\": " << r.dmaStarts << ",\n";
+        out << "      \"vif_writes\": " << r.vifWrites << ",\n";
+        out << "      \"gif_copies\": " << r.gifCopies << ",\n";
+        out << "      \"gs_writes\": " << r.gsWrites << ",\n";
+        out << "      \"vu1_cycles\": " << r.vu1Cycles << "\n";
+        out << "    }" << (i + 1u < records.size() ? "," : "") << "\n";
+    }
+    out << "  ]\n";
+    out << "}\n";
+}
+
+struct UploadFrameMeta
+{
+    bool latchedNewTick = false;
+    uint64_t vsyncTick = 0u;
+    uint32_t width = 0u;
+    uint32_t height = 0u;
+    uint32_t displayFbp = 0u;
+    uint32_t sourceFbp = 0u;
+    bool usedPreferred = false;
+    bool isMagentaFallback = false;
+    const std::vector<uint8_t> *pixels = nullptr;
+};
+
+static void UploadFrame(Texture2D &tex, PS2Runtime *rt, uint32_t &outWidth, uint32_t &outHeight, UploadFrameMeta *metaOut = nullptr)
 {
     static uint64_t s_lastPresentationTick = std::numeric_limits<uint64_t>::max();
     static bool s_hasLatchedInitialFrame = false;
@@ -477,6 +665,18 @@ static void UploadFrame(Texture2D &tex, PS2Runtime *rt, uint32_t &outWidth, uint
     outWidth = width;
     outHeight = height;
     s_hasUploadedFrame = true;
+    if (metaOut != nullptr)
+    {
+        metaOut->latchedNewTick = needsLatch;
+        metaOut->vsyncTick = currentTick;
+        metaOut->width = width;
+        metaOut->height = height;
+        metaOut->displayFbp = displayFbp;
+        metaOut->sourceFbp = sourceFbp;
+        metaOut->usedPreferred = usedPreferredDisplaySource;
+        metaOut->isMagentaFallback = false;
+        metaOut->pixels = &s_scratch;
+    }
 }
 
 PS2Runtime::PS2Runtime()
@@ -619,6 +819,10 @@ void PS2Runtime::resetIop()
 
 ps2x::iop::DebugSnapshot PS2Runtime::iopDebugSnapshot() const
 {
+    if (m_eeScheduler && m_eeScheduler->canFlushTimingSafely())
+    {
+        m_eeScheduler->flushTimingCycles();
+    }
     return m_iopSubsystem->debugSnapshot();
 }
 
@@ -1366,12 +1570,13 @@ bool PS2Runtime::dispatchGuestBranch(uint8_t *rdram,
     // this charge bounds straight-line call chains that have no local loop.
     if (m_eeScheduler && m_eeScheduler->checkpointDue(EeScheduler::kGuestDispatchCycles))
     {
+        m_guestYieldUnwinding.store(true, std::memory_order_release);
         return false;
     }
 
     if (!isCall)
     {
-        if (!hasFunction(targetPc))
+        if (!(kind == GuestBranchKind::Return && targetPc == 0u) && !hasFunction(targetPc))
         {
             reportMissingFunction(rdram, ctx, targetPc, sourcePc, kind, debugName);
         }
@@ -1404,9 +1609,12 @@ bool PS2Runtime::dispatchGuestBranch(uint8_t *rdram,
 
     RecompiledFunction targetFn = lookupFunction(targetPc);
     const uint32_t entryPc = ctx->pc;
+    // Clear any stale yield state before entering a fresh call frame so only a
+    // yield occurring inside targetFn (or its callees) suppresses stub fallthrough.
+    m_guestYieldUnwinding.store(false, std::memory_order_release);
     targetFn(rdram, ctx, this);
 
-    if (isStopRequested() || ctx->pc == 0u)
+    if (isStopRequested() || m_guestYieldUnwinding.load(std::memory_order_acquire) || ctx->pc == 0u)
     {
         return false;
     }
@@ -2212,6 +2420,12 @@ void PS2Runtime::setMaxSeconds(double maxSeconds)
     m_maxSeconds = maxSeconds;
 }
 
+void PS2Runtime::setDumpFramesConfig(std::filesystem::path dir, uint32_t everyNFrames)
+{
+    m_dumpFramesDir = std::move(dir);
+    m_dumpEveryNFrames = std::max<uint32_t>(1u, everyNFrames);
+}
+
 EeScheduler &PS2Runtime::eeScheduler()
 {
     return *m_eeScheduler;
@@ -2229,7 +2443,12 @@ void PS2Runtime::postEeEvent(EeEvent event)
 
 bool PS2Runtime::eeCheckpointDue(uint32_t cycles) noexcept
 {
-    return m_eeScheduler->checkpointDue(cycles);
+    if (m_eeScheduler && m_eeScheduler->checkpointDue(cycles))
+    {
+        m_guestYieldUnwinding.store(true, std::memory_order_release);
+        return true;
+    }
+    return false;
 }
 
 [[noreturn]] void PS2Runtime::eeWaitVSyncTicks(uint32_t ticks, uint32_t resumePc)
@@ -2360,6 +2579,7 @@ void PS2Runtime::HandleIntegerOverflow(R5900Context *ctx)
 void PS2Runtime::run()
 {
     m_stopRequested.store(false, std::memory_order_relaxed);
+    m_guestYieldUnwinding.store(false, std::memory_order_relaxed);
     ps2_stubs::resetSifState();
     resetIop();
     ps2_stubs::resetAudioStubState();
@@ -2406,6 +2626,9 @@ void PS2Runtime::run()
     const auto runStart = std::chrono::steady_clock::now();
     uint64_t tick = 0;
     uint64_t hostFrames = 0;
+    uint64_t lastDumpedVsyncTick = std::numeric_limits<uint64_t>::max();
+    uint64_t nextDumpVsyncTick = 0u;
+    std::vector<DumpedFrameRecord> dumpedFrames;
     while (!isStopRequested() && !gameThreadFinished.load(std::memory_order_acquire))
     {
         ++hostFrames;
@@ -2443,7 +2666,33 @@ void PS2Runtime::run()
         });
         uint32_t presentWidth = FB_WIDTH;
         uint32_t presentHeight = DEFAULT_DISPLAY_HEIGHT;
-        UploadFrame(frameTex, this, presentWidth, presentHeight);
+        UploadFrameMeta frameMeta{};
+        UploadFrame(frameTex, this, presentWidth, presentHeight, &frameMeta);
+        if (!m_dumpFramesDir.empty() &&
+            frameMeta.pixels != nullptr &&
+            !frameMeta.pixels->empty() &&
+            frameMeta.vsyncTick != lastDumpedVsyncTick &&
+            (dumpedFrames.empty() || frameMeta.vsyncTick >= nextDumpVsyncTick))
+        {
+            DumpedFrameRecord record{};
+            if (dumpRgbaFrameWithMetrics(m_dumpFramesDir,
+                                         *frameMeta.pixels,
+                                         frameMeta.width,
+                                         frameMeta.height,
+                                         frameMeta.vsyncTick,
+                                         hostFrames,
+                                         frameMeta.displayFbp,
+                                         frameMeta.sourceFbp,
+                                         frameMeta.usedPreferred,
+                                         frameMeta.isMagentaFallback,
+                                         *this,
+                                         record))
+            {
+                dumpedFrames.push_back(std::move(record));
+                lastDumpedVsyncTick = frameMeta.vsyncTick;
+                nextDumpVsyncTick = frameMeta.vsyncTick + m_dumpEveryNFrames;
+            }
+        }
 
         BeginDrawing();
         ClearBackground(BLACK);
@@ -2501,10 +2750,44 @@ void PS2Runtime::run()
     }
 
     {
+        if (!m_dumpFramesDir.empty())
+        {
+            m_gs.latchHostPresentationFrame();
+            std::vector<uint8_t> finalPixels;
+            uint32_t finalW = 0u;
+            uint32_t finalH = 0u;
+            uint32_t finalDispFbp = 0u;
+            uint32_t finalSrcFbp = 0u;
+            bool finalPref = false;
+            const uint64_t finalTick = m_memory.gs().vsyncTick.load(std::memory_order_acquire);
+            if (m_gs.copyLatchedHostPresentationFrame(finalPixels, finalW, finalH, &finalDispFbp, &finalSrcFbp, &finalPref) &&
+                finalTick != lastDumpedVsyncTick)
+            {
+                DumpedFrameRecord record{};
+                if (dumpRgbaFrameWithMetrics(m_dumpFramesDir,
+                                             finalPixels,
+                                             finalW,
+                                             finalH,
+                                             finalTick,
+                                             hostFrames,
+                                             finalDispFbp,
+                                             finalSrcFbp,
+                                             finalPref,
+                                             false,
+                                             *this,
+                                             record))
+                {
+                    dumpedFrames.push_back(std::move(record));
+                }
+            }
+            writeFramesSummaryJson(m_dumpFramesDir, dumpedFrames, m_gs.getDebugSnapshot(), *this);
+        }
+
         const uint64_t vsyncTicks = m_memory.gs().vsyncTick.load(std::memory_order_acquire);
         const uint32_t lastPc = m_debugPc.load(std::memory_order_relaxed);
         const uint32_t lastRa = m_debugRa.load(std::memory_order_relaxed);
         const auto eeSnap = m_eeScheduler ? m_eeScheduler->snapshot() : EeKernelSnapshot{};
+        const auto gsSnap = m_gs.getDebugSnapshot();
         const size_t activeThreads = eeSnap.threads.size();
         std::cout << "[run:summary] vsyncTicks=" << vsyncTicks
                   << " hostFrames=" << hostFrames
@@ -2515,6 +2798,10 @@ void PS2Runtime::run()
                   << " gif=" << m_memory.gifCopyCount()
                   << " gsw=" << m_memory.gsWriteCount()
                   << " vif=" << m_memory.vifWriteCount()
+                  << " vu1Cycles=" << m_vu1.state().cycles
+                  << " gs=" << gsSnap.hostPresentationWidth << "x" << gsSnap.hostPresentationHeight
+                  << " displayFbp=" << gsSnap.hostPresentationDisplayFbp
+                  << " latched=" << (gsSnap.hasHostPresentationFrame ? 1 : 0)
                   << " missingFunction=" << (hasMissingFunctionReported() ? 1 : 0)
                   << std::endl;
         for (const auto &t : eeSnap.threads)

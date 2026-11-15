@@ -590,6 +590,40 @@ namespace ps2_stubs
         setReturnU32(ctx, terminatePacketBuilderState(rdram, ctx, runtime));
     }
 
+    template <typename FillFn>
+    static bool dispatchGsGifPacket(uint8_t *rdram, PS2Runtime *runtime, uint32_t totalQwc, FillFn &&fillFn)
+    {
+        const uint32_t sizeBytes = totalQwc * 16u;
+        auto &mem = runtime->memory();
+        const uint32_t pktAddr = runtime->guestMalloc(sizeBytes, 16u);
+        if (pktAddr != 0u)
+        {
+            uint8_t *pkt = getMemPtr(rdram, pktAddr);
+            if (!pkt || !fillFn(pkt))
+            {
+                runtime->guestFree(pktAddr);
+                return false;
+            }
+            constexpr uint32_t GIF_CHANNEL = 0x1000A000;
+            constexpr uint32_t CHCR_STR_MODE0 = 0x101u;
+            mem.writeIORegister(GIF_CHANNEL + 0x10u, pktAddr);
+            mem.writeIORegister(GIF_CHANNEL + 0x20u, totalQwc & 0xFFFFu);
+            mem.writeIORegister(GIF_CHANNEL + 0x00u, CHCR_STR_MODE0);
+            mem.processPendingTransfers();
+            runtime->guestFree(pktAddr);
+            return true;
+        }
+
+        // Game arena allocators may claim the entire guest heap; fall back to host Path3 submission.
+        std::vector<uint8_t> hostPkt(sizeBytes, 0u);
+        if (!fillFn(hostPkt.data()))
+        {
+            return false;
+        }
+        mem.submitHostGifPacket(GifPathId::Path3, hostPkt.data(), sizeBytes, true);
+        return true;
+    }
+
     void sceGsExecLoadImage(uint8_t *rdram, R5900Context *ctx, PS2Runtime *runtime)
     {
         uint32_t imgAddr = getRegU32(ctx, 4);
@@ -609,60 +643,50 @@ namespace ps2_stubs
             return;
         }
 
-        uint32_t fbw = img.vram_width ? img.vram_width : std::max<uint32_t>(1, (img.width + 63) / 64);
+        const uint32_t fbw = img.vram_width ? img.vram_width : std::max<uint32_t>(1, (img.width + 63) / 64);
         const uint32_t totalImageBytes = rowBytes * static_cast<uint32_t>(img.height);
         const uint32_t headerQwc = 6u;
         const uint32_t imageQwc = (totalImageBytes + 15u) / 16u;
         const uint32_t totalQwc = headerQwc + imageQwc;
 
-        uint32_t pktAddr = runtime->guestMalloc(totalQwc * 16u, 16u);
-        if (pktAddr == 0)
-        {
-            setReturnS32(ctx, -1);
-            return;
-        }
-
-        uint8_t *pkt = getMemPtr(rdram, pktAddr);
         const uint8_t *src = getConstMemPtr(rdram, srcAddr);
-        if (!pkt || !src)
+        if (!src)
         {
-            runtime->guestFree(pktAddr);
             setReturnS32(ctx, -1);
             return;
         }
 
-        uint32_t dbp = (static_cast<uint32_t>(img.vram_addr) * 2048u) / 256u;
-        uint32_t dsax = static_cast<uint32_t>(img.x);
-        uint32_t dsay = static_cast<uint32_t>(img.y);
+        // img.vram_addr (tbp0/dbp) is already in GS 64-word (256-byte) block units.
+        const uint32_t dbp = static_cast<uint32_t>(img.vram_addr);
+        const uint32_t dsax = static_cast<uint32_t>(img.x);
+        const uint32_t dsay = static_cast<uint32_t>(img.y);
 
-        // Full messy
-        uint64_t *q = reinterpret_cast<uint64_t *>(pkt);
-        q[0] = makeGiftagAplusD(4u);
-        q[1] = 0xEULL;
-        q[2] = (static_cast<uint64_t>(img.psm & 0x3Fu) << 24) | (static_cast<uint64_t>(1u) << 16) |
-               (static_cast<uint64_t>(dbp & 0x3FFFu) << 32) | (static_cast<uint64_t>(fbw & 0x3Fu) << 48) |
-               (static_cast<uint64_t>(img.psm & 0x3Fu) << 56);
-        q[3] = 0x50ULL;
-        q[4] = (static_cast<uint64_t>(dsay & 0x7FFu) << 48) | (static_cast<uint64_t>(dsax & 0x7FFu) << 32);
-        q[5] = 0x51ULL;
-        q[6] = (static_cast<uint64_t>(img.height) << 32) | static_cast<uint64_t>(img.width);
-        q[7] = 0x52ULL;
-        q[8] = 0ULL;
-        q[9] = 0x53ULL;
-        q[10] = (static_cast<uint64_t>(2) << 58) | (static_cast<uint64_t>(imageQwc) & 0x7FFF) |
-                (1ULL << 15);
-        q[11] = 0ULL;
-
-        std::memcpy(pkt + headerQwc * 16u, src, totalImageBytes);
-
-        constexpr uint32_t GIF_CHANNEL = 0x1000A000;
-        constexpr uint32_t CHCR_STR_MODE0 = 0x101u;
-        auto &mem = runtime->memory();
-        mem.writeIORegister(GIF_CHANNEL + 0x10u, pktAddr);
-        mem.writeIORegister(GIF_CHANNEL + 0x20u, totalQwc & 0xFFFFu);
-        mem.writeIORegister(GIF_CHANNEL + 0x00u, CHCR_STR_MODE0);
-        mem.processPendingTransfers();
-        runtime->guestFree(pktAddr);
+        const bool ok = dispatchGsGifPacket(rdram, runtime, totalQwc, [&](uint8_t *pkt) -> bool
+        {
+            uint64_t *q = reinterpret_cast<uint64_t *>(pkt);
+            q[0] = makeGiftagAplusD(4u);
+            q[1] = 0xEULL;
+            q[2] = (static_cast<uint64_t>(img.psm & 0x3Fu) << 24) | (static_cast<uint64_t>(1u) << 16) |
+                   (static_cast<uint64_t>(dbp & 0x3FFFu) << 32) | (static_cast<uint64_t>(fbw & 0x3Fu) << 48) |
+                   (static_cast<uint64_t>(img.psm & 0x3Fu) << 56);
+            q[3] = 0x50ULL;
+            q[4] = (static_cast<uint64_t>(dsay & 0x7FFu) << 48) | (static_cast<uint64_t>(dsax & 0x7FFu) << 32);
+            q[5] = 0x51ULL;
+            q[6] = (static_cast<uint64_t>(img.height) << 32) | static_cast<uint64_t>(img.width);
+            q[7] = 0x52ULL;
+            q[8] = 0ULL;
+            q[9] = 0x53ULL;
+            q[10] = (static_cast<uint64_t>(2) << 58) | (static_cast<uint64_t>(imageQwc) & 0x7FFF) |
+                    (1ULL << 15);
+            q[11] = 0ULL;
+            std::memcpy(pkt + headerQwc * 16u, src, totalImageBytes);
+            return true;
+        });
+        if (!ok)
+        {
+            setReturnS32(ctx, -1);
+            return;
+        }
 
         setReturnS32(ctx, 0);
     }
@@ -696,7 +720,8 @@ namespace ps2_stubs
             return;
         }
 
-        uint32_t sbp = (static_cast<uint32_t>(img.vram_addr) * 2048u) / 256u;
+        // img.vram_addr (tbp0/sbp) is already in GS 64-word (256-byte) block units.
+        uint32_t sbp = static_cast<uint32_t>(img.vram_addr);
         uint64_t bitbltbuf = (static_cast<uint64_t>(sbp & 0x3FFFu) << 0) |
                              (static_cast<uint64_t>(fbw & 0x3Fu) << 16) |
                              (static_cast<uint64_t>(img.psm & 0x3Fu) << 24) |
@@ -709,44 +734,29 @@ namespace ps2_stubs
                           (static_cast<uint64_t>(0u) << 48);
         uint64_t trxreg = static_cast<uint64_t>(img.height) << 32 | static_cast<uint64_t>(img.width);
 
-        uint32_t pktAddr = runtime->guestMalloc(80u, 16u);
-        if (pktAddr == 0)
+        const bool ok = dispatchGsGifPacket(rdram, runtime, 5u, [&](uint8_t *pkt) -> bool
+        {
+            uint64_t *q = reinterpret_cast<uint64_t *>(pkt);
+            q[0] = makeGiftagAplusD(4u);
+            q[1] = 0xEULL;
+            q[2] = bitbltbuf;
+            q[3] = 0x50ULL;
+            q[4] = trxpos;
+            q[5] = 0x51ULL;
+            q[6] = trxreg;
+            q[7] = 0x52ULL;
+            q[8] = 1ULL;
+            q[9] = 0x53ULL;
+            return true;
+        });
+        if (!ok)
         {
             setReturnS32(ctx, -1);
             return;
         }
-
-        uint8_t *pkt = getMemPtr(rdram, pktAddr);
-        if (!pkt)
-        {
-            runtime->guestFree(pktAddr);
-            setReturnS32(ctx, -1);
-            return;
-        }
-
-        uint64_t *q = reinterpret_cast<uint64_t *>(pkt);
-        q[0] = makeGiftagAplusD(4u);
-        q[1] = 0xEULL;
-        q[2] = bitbltbuf;
-        q[3] = 0x50ULL;
-        q[4] = trxpos;
-        q[5] = 0x51ULL;
-        q[6] = trxreg;
-        q[7] = 0x52ULL;
-        q[8] = 1ULL;
-        q[9] = 0x53ULL;
-
-        constexpr uint32_t GIF_CHANNEL = 0x1000A000;
-        constexpr uint32_t CHCR_STR_MODE0 = 0x101u;
-        auto &mem = runtime->memory();
-        mem.writeIORegister(GIF_CHANNEL + 0x10u, pktAddr);
-        mem.writeIORegister(GIF_CHANNEL + 0x20u, 5u);
-        mem.writeIORegister(GIF_CHANNEL + 0x00u, CHCR_STR_MODE0);
-        mem.processPendingTransfers();
 
         ps2TraceGuestRangeWrite(rdram, dstAddr, totalImageBytes, "sceGsExecStoreImage", ctx);
         runtime->gs().consumeLocalToHostBytes(dst, totalImageBytes);
-        runtime->guestFree(pktAddr);
 
         setReturnS32(ctx, 0);
     }
@@ -810,43 +820,27 @@ namespace ps2_stubs
 
             if (runtime)
             {
-                uint32_t pktAddr = runtime->guestMalloc(128u, 16u);
-                if (pktAddr != 0u)
+                dispatchGsGifPacket(rdram, runtime, 8u, [&](uint8_t *pkt) -> bool
                 {
-                    uint8_t *pkt = getMemPtr(rdram, pktAddr);
-                    if (pkt)
-                    {
-                        uint64_t *q = reinterpret_cast<uint64_t *>(pkt);
-                        q[0] = makeGiftagAplusD(7u);
-                        q[1] = 0xEULL;
-                        q[2] = pmode;
-                        q[3] = 0x41ULL;
-                        q[4] = smode2;
-                        q[5] = 0x42ULL;
-                        q[6] = dispfb;
-                        q[7] = 0x59ULL;
-                        q[8] = display;
-                        q[9] = 0x5aULL;
-                        q[10] = dispfb;
-                        q[11] = 0x5bULL;
-                        q[12] = display;
-                        q[13] = 0x5cULL;
-                        q[14] = bgcolor;
-                        q[15] = 0x5fULL;
-                        constexpr uint32_t GIF_CHANNEL = 0x1000A000;
-                        constexpr uint32_t CHCR_STR_MODE0 = 0x101u;
-                        auto &mem = runtime->memory();
-                        mem.writeIORegister(GIF_CHANNEL + 0x10u, pktAddr);
-                        mem.writeIORegister(GIF_CHANNEL + 0x20u, 8u);
-                        mem.writeIORegister(GIF_CHANNEL + 0x00u, CHCR_STR_MODE0);
-                        mem.processPendingTransfers();
-                        runtime->guestFree(pktAddr);
-                    }
-                    else
-                    {
-                        runtime->guestFree(pktAddr);
-                    }
-                }
+                    uint64_t *q = reinterpret_cast<uint64_t *>(pkt);
+                    q[0] = makeGiftagAplusD(7u);
+                    q[1] = 0xEULL;
+                    q[2] = pmode;
+                    q[3] = 0x41ULL;
+                    q[4] = smode2;
+                    q[5] = 0x42ULL;
+                    q[6] = dispfb;
+                    q[7] = 0x59ULL;
+                    q[8] = display;
+                    q[9] = 0x5aULL;
+                    q[10] = dispfb;
+                    q[11] = 0x5bULL;
+                    q[12] = display;
+                    q[13] = 0x5cULL;
+                    q[14] = bgcolor;
+                    q[15] = 0x5fULL;
+                    return true;
+                });
             }
         }
 

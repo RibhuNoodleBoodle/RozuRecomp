@@ -1967,6 +1967,17 @@ void PS2Memory::submitGifPacket(GifPathId pathId, const uint8_t *data, uint32_t 
         m_gifArbiter->drain();
 }
 
+void PS2Memory::submitHostGifPacket(GifPathId pathId, const uint8_t *data, uint32_t sizeBytes, bool drainImmediately, bool path2DirectHl)
+{
+    if (!data || sizeBytes < 16)
+        return;
+
+    m_dmaStartCount.fetch_add(1, std::memory_order_relaxed);
+    m_seenGifCopy = true;
+    m_gifCopyCount.fetch_add(1, std::memory_order_relaxed);
+    submitGifPacket(pathId, data, sizeBytes, drainImmediately, path2DirectHl);
+}
+
 void PS2Memory::processGIFPacket(uint32_t srcPhysAddr, uint32_t qwCount)
 {
     if (!m_rdram || qwCount == 0)
