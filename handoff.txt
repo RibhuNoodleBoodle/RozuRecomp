@@ -2,9 +2,9 @@
 RULE OF ROSE (PS2, SLUS-21448) — PS2RECOMP CONTINUITY & STATE HANDOFF LEDGER
 ================================================================================
 Last Updated By: Gemini Implementation & Verification Engineer
-Timestamp: 2026-11-15T20:19:40+05:30
-Project Status: IN PROGRESS — M03 COMPLETE, STARTING M04
-Next Milestone to Run: M04 (`gemini_flash/Gemini_Step_04_Runtime_Boot_And_Dispatch.txt`)
+Timestamp: 2026-11-15T22:50:20+05:30
+Project Status: IN PROGRESS — M04 COMPLETE, NEXT M05 (IOP IRX, CDVD, and RPC)
+Next Milestone to Run: M05 (`gemini_flash/Gemini_Step_05_IOP_IRX_CDVD_And_RPC.txt`)
 
 --------------------------------------------------------------------------------
 1. REPOSITORY & UPSTREAM BASELINE
@@ -77,7 +77,7 @@ Next Milestone to Run: M04 (`gemini_flash/Gemini_Step_04_Runtime_Boot_And_Dispat
 | M01 | DONE   | `9a7990313cad693e3ba3e424012626ad8928fd22` | `gemini_flash/Gemini_Step_01_Upstream_Toolchain_And_Tests.txt` | Build baseline in `out/build/baseline` (`FFMPEG=OFF`, added `-msse4.1` for GCC 15 x86_64, `7m36.7s`); `ctest` `45/45` + `ps2x_tests` `446/446` passed (`491/491`); `/` `1514M` free, `/mnt/6421-8598` `244408M` free |
 | M02 | DONE   | `6ad9152f95c05da221197f70aed4914da5be13e2` | `gemini_flash/Gemini_Step_02_Ghidra_And_Function_Map.txt` | Updated `ElfParser` (`.vudata`/`.DVP.*` exclusion + `.gnu.linkonce.t.*` synthesis); `tools/generate_slus21448_toml.py` generated `config/slus_21448.{csv,toml}` with `8,983` functions (`7,534` `.text` + `1,449` `.gnu.linkonce.t.*`, `0` `.vutext`, `228` stubs, `439` entries, `171` jump tables); `ctest` `45/45` + `ps2x_tests` `446/446` passed (`491/491`); `/` `1564M` free, `/mnt/6421-8598` `244401M` free |
 | M03 | DONE   | `737466feda6602d45f4377e875f4bc9ca16f20f5` | `gemini_flash/Gemini_Step_03_Static_Recompilation_Integration.txt` | Generated `8,983` functions (`0` unhandled, `0` errors) in `out/recomp/`; integrated `PS2X_RECOMP_OUTPUT_DIR` `64`-batch unity build (`-O1 -fno-var-tracking-assignments`, no LTO on runner) in `ps2xRuntime/CMakeLists.txt`; linked `38M` `ps2EntryRunner` in `889.6s` (`1628.5 MiB` / `1.59 GiB` peak RSS `< 6.0 GiB`); `ctest` `45/45` + `ps2x_tests` `446/446` passed (`491/491`) |
-| M04 | TODO   | -          | `gemini_flash/Gemini_Step_04_Runtime_Boot_And_Dispatch.txt` | Register `0x8cf7b024` overrides, wire `T0_COUNT` & `sceGsSyncVCallback`, boot into `MagSystem::run` |
+| M04 | DONE   | `6f335bb22052c0550bb034e01e5c9012c36ed847` | `gemini_flash/Gemini_Step_04_Runtime_Boot_And_Dispatch.txt` | `SLUS_214.48` override (`MissingFunctionPolicy::Stop`), `--cd-image`/`--cd-root`/`--max-frames`/`--max-seconds`, `InitThread` prio=1, alarm syscalls `0xFD`/`-0xFE`, isolated `asyncCallbackStack` `[0x01F40000, 0x01FC0000)`, `hasActiveInterruptInvocation` guard, `sceCdReadDvdDualInfo`/`sceCdLayerSearchFile`/`sceCdSetTimeout`/`sceCdPOffCallback` + ISO auto-wiring, fixed `tools/generate_slus21448_toml.py` splits (`9,078` funcs, `0` errors); booted past `0x244770`, loaded all 8 `.IRX` + `RXSNDDRV.IRX`, entered engine loop `0x2051e8`, rendered `512x448` GS frames (`dma=10`, `gif=6`, `vif=2`, `vsyncTicks=29`, `missingFunction=0`); `ctest` `45/45` + `ps2x_tests` `446/446` (`491/491`), `/` `3963M` free, `/mnt/6421-8598` `243212M` free |
 | M05 | TODO   | -          | `gemini_flash/Gemini_Step_05_IOP_IRX_CDVD_And_RPC.txt` | Load `IOPCONF.CNF` & 8 `.IRX` modules, case-insensitive CDVD/VFS lookup for `.RPK` archives |
 | M06 | TODO   | -          | `gemini_flash/Gemini_Step_06_GS_VU_Graphics.txt` | VIF1/GIF DMA sync, 44 `.vutext` VU1 overlays, `512x448`/`512x384` logo & title frame renders |
 | M07 | TODO   | -          | `gemini_flash/Gemini_Step_07_Movies_And_Audio.txt` | Stage FFmpeg in `out/deps/` for `MOVIE/*.PSS`, enable `LIBSD.IRX` + `RXSNDDRV.IRX` `.STR` audio |
