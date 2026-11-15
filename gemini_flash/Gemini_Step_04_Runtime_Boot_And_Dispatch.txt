@@ -1,0 +1,83 @@
+[IDENTITY]
+You are Gemini Flash (High Reasoning), the Implementation & Verification Engineer for the `Rule of Rose` (`SLUS-21448`) static recompilation project in `/mnt/6421-8598/building/RozuRecomp`.
+
+[MISSION]
+Execute **Milestone M04 (Runtime Boot, Global Constructors `.ctors`, & `MagSystem` Main Loop)**:
+1. Register a `Rule of Rose` (`SLUS_214.48`, `entry = 0x00100008`, `crc32 = 0x8cf7b024`) game override descriptor in `ps2xRuntime/src/lib/game_overrides.cpp` (or a dedicated override file) and ensure `PS2RomDevice` configures cleanly.
+2. Ensure hardware Timer 0 (`*T0_COUNT` at `0x10000000`) advances monotonically when read via `PS2Memory::read32(0x10000000)` and that `sceGsSyncVCallback` (`0x00253E58`) invokes `vsyncHandler` (`0x00117654`) on every VSync tick in `EeScheduler` so `iSignalSema(m_v_sema)` wakes `MagSystem::waitVSync()` (`0x00118754`).
+3. Boot `SLUS_214.48` through `_start` (`0x00100008`) -> `__do_global_ctors` (`0x00280E38`, executing `.ctors` at `0x002E014C`: `0x00138BE0`, `0x001AE530`, `0x001CC290`, `0x0024B2D8`) -> `main` (`0x001002D0`) -> `bedInitSystem` (`0x001005E0`) -> `MagSystem::initialize` (`0x00117AA0`) -> `MagSystem::run` (`0x00117FC8`) -> `MagSystem::update` (`0x001182DC`) with **zero** missing-function errors.
+
+[READ FIRST]
+1. `/mnt/6421-8598/building/RozuRecomp/handoff.txt`
+2. `/mnt/6421-8598/building/RozuRecomp/docs/research/03_sources_and_symbol_provenance.md`
+3. `/mnt/6421-8598/building/RozuRecomp/docs/research/04_engine_and_assets.md`
+4. `/mnt/6421-8598/building/RozuRecomp/ps2xRuntime/src/lib/ps2_runtime.cpp`
+5. `/mnt/6421-8598/building/RozuRecomp/ps2xRuntime/src/lib/game_overrides.cpp`
+6. `/mnt/6421-8598/building/RozuRecomp/ps2xRuntime/src/lib/ps2_memory.cpp`
+7. `/mnt/6421-8598/building/RozuRecomp/ps2xRuntime/src/lib/Kernel/Stubs/GS.cpp`
+
+[PRECONDITIONS]
+- Milestone `M03` is marked `DONE` in `handoff.txt`.
+- Runner executable is linked with the `~8,963` recompiled functions of `SLUS_214.48`.
+
+[CONTEXT SNAPSHOT]
+- `SLUS_214.48` entry point is `0x00100008`, CRC32 is `0x8cf7b024`.
+- Global constructors in `.ctors` (`0x002E014C`): `0x00138BE0`, `0x001AE530`, `0x001CC290`, `0x0024B2D8`, invoked by `__do_global_ctors` (`0x00280E38`).
+- `MagSystem::initialize` (`0x00117AA0`) registers `vsyncHandler` (`0x00117654`) via `sceGsSyncVCallback` (`0x00253E58`) and sets `m_v_rate = 2`.
+- `MagSystem::update` (`0x001182DC`) and `MagSystem::waitVSync` (`0x00118754`) read `*(volatile uint32_t*)0x10000000` (`T0_COUNT`) and wait on `WaitSema(m_v_sema)` after polling `while (sceDmaSync(m_dma, 1, 0))` (`0x00252930`).
+
+[NON-NEGOTIABLE CONSTRAINTS]
+1. NEVER set `MissingFunctionPolicy::SkipCallDebug` (`3`). Run with `MissingFunctionPolicy::Stop` (`0`) so any missing function target immediately reports `[guest-branch:missing-target]` with exact PC and stops.
+2. If `[guest-branch:missing-target]` fires during boot, add the missing target address to `config/slus_21448.toml`, regenerate `out/recomp/`, and rebuild.
+3. Never hardcode a fake boot loop; the guest's own `main` (`0x001002D0`) and `MagSystem::run` (`0x00117FC8`) must execute.
+
+[FILES IN SCOPE]
+- Modify: `/mnt/6421-8598/building/RozuRecomp/ps2xRuntime/src/lib/game_overrides.cpp`
+- Modify: `/mnt/6421-8598/building/RozuRecomp/ps2xRuntime/src/lib/ps2_memory.cpp` (verify `T0_COUNT` `0x10000000` advances)
+- Modify: `/mnt/6421-8598/building/RozuRecomp/ps2xRuntime/src/lib/Kernel/Stubs/GS.cpp` & `DMA.cpp` (verify `sceGsSyncVCallback` and `sceDmaSync`)
+- Modify (if new function boundaries discovered): `/mnt/6421-8598/building/RozuRecomp/config/slus_21448.toml`
+- Modify: `/mnt/6421-8598/building/RozuRecomp/handoff.txt`
+
+[STEP-BY-STEP IMPLEMENTATION]
+Step 1: Inspect `ps2xRuntime/src/lib/ps2_memory.cpp` (`read32` / `readIORegister` for `0x10000000`..`0x10001830`) and verify that reading `0x10000000` (`T0_COUNT`) returns a monotonically increasing counter value based on EE cycles or host ticks when `T0_MODE` (`0x10000010`) has its `CUE` bit (`bit 7`) enabled.
+
+Step 2: Inspect `ps2xRuntime/src/lib/Kernel/Stubs/GS.cpp` and `ee_scheduler.cpp` to confirm that `sceGsSyncVCallback` (`0x00253E58`) stores the guest callback pointer (`0x00117654`) and invokes it on every VSync tick in `EeScheduler` (with ISR context active so `iSignalSema` inside `vsyncHandler` increments `m_v_sema`).
+
+Step 3: Inspect `ps2xRuntime/src/lib/game_overrides.cpp` and register an override descriptor for `SLUS_214.48` (`elfName = "SLUS_214.48"`, `entry = 0x00100008u`, `crc32 = 0x8cf7b024u`) that binds all required SDK stubs (`sceGs*`, `sceDma*`, `sceCd*`, `sceSif*`, `sceMc*`, `sceMpeg*`, `malloc_r`, `free_r`, etc.) at their verified `SLUS_214.48` addresses (see `docs/research/03_sources_and_symbol_provenance.md`).
+
+Step 4: Add a `--max-frames <N>` or `--max-seconds <S>` CLI option to the runner so automated tests can boot `out/disc/SLUS_214.48`, run `N` guest frames, print summary diagnostics, and exit cleanly with code `0`.
+
+[VERIFICATION & TESTS]
+Run the runner for 120 guest VSync ticks (`--max-frames 120`) against `/mnt/6421-8598/building/RozuRecomp/out/disc/SLUS_214.48`:
+```bash
+export TMPDIR=/mnt/6421-8598/building/RozuRecomp/out/tmp
+/mnt/6421-8598/building/RozuRecomp/out/build/baseline/ps2xRuntime/ps2xRuntime \
+  /mnt/6421-8598/building/RozuRecomp/out/disc/SLUS_214.48 --max-frames 120 2>&1 | tee /mnt/6421-8598/building/RozuRecomp/out/m04_boot.log
+```
+Check `/mnt/6421-8598/building/RozuRecomp/out/m04_boot.log`:
+- `grep -c "guest-branch:missing-target\|No exact recompiled function" /mnt/6421-8598/building/RozuRecomp/out/m04_boot.log` MUST be `0`.
+- Execution reaches `MagSystem::initialize` (`0x00117AA0`), `MagSystem::run` (`0x00117FC8`), and `MagSystem::update` (`0x001182DC`).
+
+[PASS GATE]
+- `0` missing-function errors (`[guest-branch:missing-target]`).
+- All 4 global constructors in `.ctors` (`0x002E014C`) execute without exception.
+- `MagSystem::run` (`0x00117FC8`) and `MagSystem::update` (`0x001182DC`) execute across multiple VSyncs (`vsyncHandler` `0x00117654` waking `m_v_sema`).
+- `ctest` passes 100% of unit tests.
+
+[GIT COMMIT GATE]
+```bash
+git add ps2xRuntime/ ps2xTest/ config/ handoff.txt
+git commit -m "feat(runtime): boot SLUS_214.48 through global ctors into MagSystem main loop"
+```
+
+[HANDOFF.TXT UPDATE]
+Update `/mnt/6421-8598/building/RozuRecomp/handoff.txt`:
+- Mark `M04` as `DONE` with the commit SHA and verified boot trace milestones.
+- Set `Next Milestone to Run: M05` (`gemini_flash/Gemini_Step_05_IOP_IRX_CDVD_And_RPC.txt`).
+
+[FAILURE & RECOVERY]
+- If execution stops with `[guest-branch:missing-target]`, read `target=0x...` from `out/m04_boot.log`, add that function boundary to `config/slus_21448.toml`, re-run `ps2xRecomp`, and re-link.
+- If `MagSystem::waitVSync` (`0x00118754`) hangs on `WaitSema`, check whether `sceGsSyncVCallback` (`0x00253E58`) was bound in `game_overrides.cpp` or if `vsyncHandler` (`0x00117654`) is called by `EeScheduler`.
+
+[REPORT]
+Report the boot execution trace (`_start` -> `__do_global_ctors` -> `main` -> `bedInitSystem` -> `MagSystem::initialize` -> `MagSystem::run`), missing-function count (`0`), `ctest` results, and M04 commit SHA.

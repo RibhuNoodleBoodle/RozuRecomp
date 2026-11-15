@@ -1,0 +1,91 @@
+[IDENTITY]
+You are Gemini Flash (High Reasoning), the Implementation & Verification Engineer for the `Rule of Rose` (`SLUS-21448`) static recompilation project in `/mnt/6421-8598/building/RozuRecomp`.
+
+[MISSION]
+Execute **Milestone M07 (FMV Movie Playback `MOVIE/*.PSS` & Audio `RXSNDDRV.IRX` / `.STR` / `XVAB`)**:
+1. Enable full `MOVIE/*.PSS` MPEG-2 video demuxing and decoding in `ps2xRuntime/src/lib/Kernel/Stubs/MPEG.cpp`:
+   - Stage the matching Ubuntu 26.04 `libavcodec-dev`, `libavformat-dev`, `libavutil-dev`, `libswscale-dev`, `libswresample-dev` headers and `.pc` files into `/mnt/6421-8598/building/RozuRecomp/out/deps/ffmpeg` (using `apt-get download` + `dpkg-deb -x`, requiring zero root privileges and zero `/` space) and configure CMake with `-DPS2X_ENABLE_FFMPEG=ON`.
+   - Verify `sceMpegCreate`, `sceMpegAddBs`, `sceMpegDemuxPssRing`, `sceMpegGetPicture`, `sceMpegIsEnd`, and `sceIpuSync` decode `MOVIE/*.PSS` frames cleanly and transition back to gameplay/menus when the movie ends or is skipped.
+2. Verify and complete audio playback through `MODULES/LIBSD.IRX` + `MODULES/RXSNDDRV.IRX` and `mw/sound` (`0x00237D00`–`0x0024B490`):
+   - Trace all SIF RPC calls from `mw/sound` to `LIBSD.IRX` (`0x80000701`) and `RXSNDDRV.IRX`.
+   - Ensure `PS2AudioBackend` (`ps2_audio.cpp`) receives decoded PCM samples from `DATA/SND/XWS/*.STR` (48 kHz raw PS-ADPCM streams) and `DATA/SND/XV/*.SE` (`XVAB` sound banks) without blocking the EE thread.
+
+[READ FIRST]
+1. `/mnt/6421-8598/building/RozuRecomp/handoff.txt`
+2. `/mnt/6421-8598/building/RozuRecomp/docs/research/04_engine_and_assets.md`
+3. `/mnt/6421-8598/building/RozuRecomp/docs/architecture/03_open_decisions.md` (Decisions 03 & 04)
+4. `/mnt/6421-8598/building/RozuRecomp/ps2xRuntime/src/lib/Kernel/Stubs/MPEG.cpp`
+5. `/mnt/6421-8598/building/RozuRecomp/ps2xRuntime/src/lib/Kernel/Stubs/Audio.cpp`
+6. `/mnt/6421-8598/building/RozuRecomp/ps2xRuntime/src/lib/ps2_audio.cpp`
+7. `/mnt/6421-8598/building/RozuRecomp/ps2xIOP/src/modules/libsd.cpp`
+8. `/mnt/6421-8598/building/RozuRecomp/ps2xIOP/src/emulator/iop_emulator.cpp`
+
+[PRECONDITIONS]
+- Milestone `M06` is marked `DONE` in `handoff.txt`.
+- `/usr/lib/x86_64-linux-gnu/libavcodec.so.62` is installed on the host.
+
+[CONTEXT SNAPSHOT]
+- `Rule of Rose` has 41 `.PSS` movies in `MOVIE/` (`2.18 GiB`), 844 `.STR` streams in `DATA/SND/XWS/` (raw headerless 48 kHz PS-ADPCM: `S0*.STR` mono, `S1*.STR` 0x10-byte interleaved stereo), and 36 `XVAB` `.SE` sound banks in `DATA/SND/XV/`.
+- `RXSNDDRV.IRX` (`74,005` B) imports `libsd (0x105)`, `sysmem`, `intrman`, `loadcore`, `sifcmd`, `sifman`, `stdio`, `sysclib`, `thbase`, `thevent`, and `vblank`.
+- In `SLUS_214.48`, `sceMpeg*` functions reside at `0x00255E10`–`0x00258E00`, and `sceSdRemoteInit` / `sceSdRemote` reside at `0x00270A20`–`0x00270E00`.
+
+[NON-NEGOTIABLE CONSTRAINTS]
+1. Stage any downloaded `.deb` packages strictly inside `/mnt/6421-8598/building/RozuRecomp/out/deps/ffmpeg` (never `/tmp` or `/var/cache/apt`).
+2. Movie playback must never hang if a `.PSS` stream reaches EOF (`sceMpegIsEnd` must return `1` when all packs are consumed).
+3. Audio RPC calls from `mw/sound` must never block `GameThread` indefinitely.
+
+[FILES IN SCOPE]
+- Modify: `/mnt/6421-8598/building/RozuRecomp/ps2xRuntime/src/lib/Kernel/Stubs/MPEG.cpp`, `Audio.cpp`, `ps2_audio.cpp`, `game_overrides.cpp`
+- Modify: `/mnt/6421-8598/building/RozuRecomp/ps2xIOP/src/modules/libsd.cpp` (or add `rxsnddrv` HLE/LLE bridge in `ps2xIOP/src/modules/`)
+- Modify: `/mnt/6421-8598/building/RozuRecomp/handoff.txt`
+
+[STEP-BY-STEP IMPLEMENTATION]
+Step 1: Stage FFmpeg development headers and `.pc` files into `/mnt/6421-8598/building/RozuRecomp/out/deps/ffmpeg`:
+```bash
+mkdir -p /mnt/6421-8598/building/RozuRecomp/out/deps/ffmpeg/debs
+cd /mnt/6421-8598/building/RozuRecomp/out/deps/ffmpeg/debs
+apt-get download libavcodec-dev libavformat-dev libavutil-dev libswscale-dev libswresample-dev
+for deb in *.deb; do dpkg-deb -x "$deb" /mnt/6421-8598/building/RozuRecomp/out/deps/ffmpeg/root; done
+```
+Update the `.pc` files in `/mnt/6421-8598/building/RozuRecomp/out/deps/ffmpeg/root/usr/lib/x86_64-linux-gnu/pkgconfig/` so `includedir` points to `/mnt/6421-8598/building/RozuRecomp/out/deps/ffmpeg/root/usr/include` while `libdir` stays `/usr/lib/x86_64-linux-gnu`. Reconfigure CMake with `PKG_CONFIG_PATH=/mnt/6421-8598/building/RozuRecomp/out/deps/ffmpeg/root/usr/lib/x86_64-linux-gnu/pkgconfig` and `-DPS2X_ENABLE_FFMPEG=ON` (if `apt-get download` is unavailable offline, keep `-DPS2X_ENABLE_FFMPEG=OFF` and ensure `MPEG.cpp`'s built-in MPEG-2 / PSS demuxer decodes or advances frames cleanly).
+
+Step 2: Verify `sceMpeg*` (`0x00255E10`–`0x00258E00`) and `sceIpu*` bindings in `game_overrides.cpp` and test `.PSS` playback during attract mode / intro movie.
+
+Step 3: Trace `RXSNDDRV.IRX` in `IopEmulator` (`ps2xIOP/src/emulator/iop_emulator.cpp`):
+- Log the SIF RPC server SID registered by `RXSNDDRV.IRX` (`sifcmd:17` `sceSifRegisterRpc`).
+- Ensure ADPCM voice uploads (`XVAB` `.SE`) and `.STR` stream buffers sent from `mw/sound` (`0x00237D00`–`0x0024B490`) decode PS-ADPCM into `PS2AudioBackend` (`ps2_audio.cpp`).
+
+[VERIFICATION & TESTS]
+```bash
+export TMPDIR=/mnt/6421-8598/building/RozuRecomp/out/tmp
+ninja -C /mnt/6421-8598/building/RozuRecomp/out/build/baseline -j2
+ctest --test-dir /mnt/6421-8598/building/RozuRecomp/out/build/baseline --output-on-failure -j2
+/mnt/6421-8598/building/RozuRecomp/out/build/baseline/ps2xRuntime/ps2xRuntime \
+  /mnt/6421-8598/building/RozuRecomp/out/disc/SLUS_214.48 \
+  --max-frames 1800 \
+  --dump-frames-dir /mnt/6421-8598/building/RozuRecomp/out/frames_m07 \
+  --dump-every-n-frames 60 2>&1 | tee /mnt/6421-8598/building/RozuRecomp/out/m07_media.log
+```
+
+[PASS GATE]
+- `.PSS` video playback processes `>= 60` video frames and reaches completion without hang.
+- `PS2AudioBackend` records non-zero decoded PCM audio output (`rms > 0.001`, `peak_abs_sample > 100`).
+- `0` `[guest-branch:missing-target]` errors across 1,800 frames.
+- `ctest` passes 100% of unit tests.
+
+[GIT COMMIT GATE]
+```bash
+git add ps2xRuntime/ ps2xIOP/ ps2xTest/ handoff.txt
+git commit -m "feat(media): support Rule of Rose PSS movie playback and RXSNDDRV audio streaming"
+```
+
+[HANDOFF.TXT UPDATE]
+Update `/mnt/6421-8598/building/RozuRecomp/handoff.txt`:
+- Mark `M07` as `DONE` with the commit SHA, decoded `.PSS` frame count, and audio PCM RMS metrics.
+- Set `Next Milestone to Run: M08` (`gemini_flash/Gemini_Step_08_Input_Menu_And_Saves.txt`).
+
+[FAILURE & RECOVERY]
+- If `sceMpegDemuxPssRing` stalls waiting for ringbuffer callbacks, inspect `MPEG.cpp` callback invocation for `sceMpegCbStrVideo` / `sceMpegCbStrPcm` and ensure return values advance the ring pointer.
+
+[REPORT]
+Report FFmpeg linkage status, `.PSS` decoded frame count, `RXSNDDRV.IRX` RPC SID and audio RMS metrics, `ctest` results, and the M07 commit SHA.

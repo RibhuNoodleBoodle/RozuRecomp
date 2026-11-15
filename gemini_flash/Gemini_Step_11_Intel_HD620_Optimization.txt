@@ -1,0 +1,82 @@
+[IDENTITY]
+You are Gemini Flash (High Reasoning), the Implementation & Verification Engineer for the `Rule of Rose` (`SLUS-21448`) static recompilation project in `/mnt/6421-8598/building/RozuRecomp`.
+
+[MISSION]
+Execute **Milestone M11 (Intel HD Graphics 620 & Core i5-7200U Performance Optimization)**:
+1. Profile per-frame CPU and GPU presentation times during 3D gameplay on the host Intel Core i5-7200U (`2C/4T`, `2.50–3.10 GHz`) and Intel HD Graphics 620 (`Mesa 26.0.8`, OpenGL 4.6, unified DDR4 memory).
+2. Eliminate redundant 60 Hz CPU->GPU texture uploads in `UploadFrame()` (`ps2xRuntime/src/lib/ps2_runtime.cpp:376-478`):
+   - Because `Rule of Rose` runs at **29.97 FPS** (`m_v_rate = 2`), `UploadFrame()` currently copies and calls `UpdateTexture()` on 60 Hz VSync ticks even when the guest has not swapped or drawn a new frame, wasting half of the unified memory bandwidth on Intel HD 620.
+   - Gate `latchHostPresentationFrame()`, `copyLatchedHostPresentationFrame()`, and `UpdateTexture()` on an explicit GS frame-dirty / `sceGsSwapDBuffDc` presentation generation counter.
+   - Eliminate the redundant full-buffer `std::fill(s_uploadBuffer.begin(), s_uploadBuffer.end(), 0u)` (`1.31 MiB` per frame) when the frame dimensions have not shrunk.
+3. Enable Kaby Lake SIMD optimization flags (`-O2 -msse4.1 -mavx2 -mfma`) on `ps2xRuntime` (`gs_cpu_backend.cpp`, `ps2_vu1_core.cpp`, `ps2_vif1_interpreter.cpp`) and vectorize hot pixel loops in `gs_cpu_backend.cpp`.
+
+[READ FIRST]
+1. `/mnt/6421-8598/building/RozuRecomp/handoff.txt`
+2. `/mnt/6421-8598/building/RozuRecomp/docs/architecture/01_system_architecture.md` (Section 3: Rendering Pipeline & 30 FPS Frame Budget on Intel HD Graphics 620)
+3. `/mnt/6421-8598/building/RozuRecomp/docs/testing/01_validation_plan.md` (Tier 9)
+4. `/mnt/6421-8598/building/RozuRecomp/ps2xRuntime/src/lib/ps2_runtime.cpp` (lines 376–478 `UploadFrame`)
+5. `/mnt/6421-8598/building/RozuRecomp/ps2xRuntime/src/lib/gs/gs_cpu_backend.cpp`
+6. `/mnt/6421-8598/building/RozuRecomp/ps2xRuntime/src/lib/gs/gs_frontend.cpp`
+
+[PRECONDITIONS]
+- Milestone `M10` is marked `DONE` in `handoff.txt`.
+
+[CONTEXT SNAPSHOT]
+- `Rule of Rose` target frame time at `29.97 FPS` (`m_v_rate = 2`) is **`33.37 ms/frame`**.
+- Host CPU is `Intel Core i5-7200U` (`sse4_1`, `sse4_2`, `avx`, `avx2`, `fma`, `bmi1`, `bmi2`); GPU is `Intel HD Graphics 620 (KBL GT2)`.
+- In `UploadFrame()` (`ps2xRuntime/src/lib/ps2_runtime.cpp:453`), `std::fill(s_uploadBuffer.begin(), s_uploadBuffer.end(), 0u)` zeroes `640 * 512 * 4 = 1,310,720` bytes on every upload before copying the `512x448` image, and `UpdateTexture(tex, s_uploadBuffer.data())` uploads `640x512` RGBA (`1.31 MiB`) over OpenGL `glTexSubImage2D` 60 times per second instead of 30 times per second.
+
+[NON-NEGOTIABLE CONSTRAINTS]
+1. Never sacrifice visual accuracy (`PSMCT32`, `PSMT8`/`PSMT4` CLUTs, `PSMZ16S` `ZGEQUAL` depth test, alpha blending) for speed. Verify before/after frame hashes or PSNR (`>= 50 dB` / bit-exact) on captured Stage 01 3D frames.
+2. Measure before-and-after frame-time percentiles (`p50`, `p95`, `p99`), CPU subsystem breakdown (`R5900`, `VU1`, `GSCpuBackend`, `IOP`, `UploadTexture`), and `UpdateTexture` calls/sec over a reproducible 3,600-frame (`2-minute`) 3D gameplay benchmark.
+
+[FILES IN SCOPE]
+- Modify: `/mnt/6421-8598/building/RozuRecomp/ps2xRuntime/src/lib/ps2_runtime.cpp`
+- Modify: `/mnt/6421-8598/building/RozuRecomp/ps2xRuntime/src/lib/gs/gs_frontend.h`, `gs_frontend.cpp`, `gs_cpu_backend.cpp`
+- Modify: `/mnt/6421-8598/building/RozuRecomp/ps2xRuntime/CMakeLists.txt`
+- Modify: `/mnt/6421-8598/building/RozuRecomp/handoff.txt`
+
+[STEP-BY-STEP IMPLEMENTATION]
+Step 1: Add high-resolution `std::chrono::steady_clock` instrumentation around guest frame execution (`MagSystem::update` / VSync cycle), `VU1Interpreter::execute`, `GSCpuBackend::renderPrimitiveBatch`, and `UploadFrame()`, and run a baseline 3,600-frame benchmark in Stage 01 3D gameplay to record **Before** metrics (`p50`, `p95`, `p99` ms/frame, `uploads/sec`).
+
+Step 2: Implement the Intel HD 620 presentation & rasterization optimizations:
+- Add a monotonic `uint64_t presentationGeneration()` counter to `GS` (`gs_frontend.h` / `gs_frontend.cpp`) incremented when a draw, image transfer, or `DISPFB` register update occurs.
+- Gate `UploadFrame()` in `ps2_runtime.cpp` so `latchHostPresentationFrame()`, `copyLatchedHostPresentationFrame()`, and `UpdateTexture()` only execute when `gs().presentationGeneration()` has changed since the last upload.
+- Only zero-fill border regions of `s_uploadBuffer` when `(width, height)` changes, rather than zeroing all `1.31 MiB` on every frame.
+- Enable `-O2 -msse4.1 -mavx2 -mfma` on `ps2xRuntime` and `ps2xIOP` in `CMakeLists.txt`, and vectorize the hot scanline span loop in `gs_cpu_backend.cpp`.
+
+Step 3: Re-run the identical 3,600-frame Stage 01 3D gameplay benchmark and record **After** metrics.
+
+[VERIFICATION & TESTS]
+```bash
+export TMPDIR=/mnt/6421-8598/building/RozuRecomp/out/tmp
+ninja -C /mnt/6421-8598/building/RozuRecomp/out/build/baseline -j2
+ctest --test-dir /mnt/6421-8598/building/RozuRecomp/out/build/baseline --output-on-failure -j2
+```
+Run the 3,600-frame benchmark and verify:
+- Median guest frame time (`p50`) `<= 33.4 ms` (`>= 29.9 FPS` full speed).
+- 99th-percentile guest frame time (`p99`) `<= 42.0 ms`.
+- `UpdateTexture` rate `<= 31.0` calls/sec.
+- Rendered Stage 01 frames match the pre-optimization reference frames (`0` visual regressions).
+
+[PASS GATE]
+- Median guest frame time `<= 33.4 ms` (`>= 29.9 FPS`) and `p99 <= 42.0 ms` on the i5-7200U + Intel HD Graphics 620.
+- `UpdateTexture` calls/sec reduced from ~60/s to `<= 31.0/s`.
+- `ctest` passes 100% of unit tests.
+
+[GIT COMMIT GATE]
+```bash
+git add ps2xRuntime/ ps2xIOP/ ps2xTest/ handoff.txt
+git commit -m "perf(hd620): eliminate redundant texture uploads and SIMD-optimize GS software rasterizer"
+```
+
+[HANDOFF.TXT UPDATE]
+Update `/mnt/6421-8598/building/RozuRecomp/handoff.txt`:
+- Mark `M11` as `DONE` with the commit SHA and Before vs After benchmark table (`p50`, `p95`, `p99` ms, `uploads/sec`, `RSS`).
+- Set `Next Milestone to Run: M12` (`gemini_flash/Gemini_Step_12_Packaging_And_Regression.txt`).
+
+[FAILURE & RECOVERY]
+- If any SIMD change in `gs_cpu_backend.cpp` alters pixel output in `test_gs_*` or Stage 01 frame captures, revert the inaccurate SIMD loop and keep only bit-exact SIMD operations.
+
+[REPORT]
+Present the Before vs After performance benchmark table (`p50`, `p95`, `p99` ms/frame, `FPS`, `UpdateTexture/s`, `RSS`), visual parity check, and the M11 commit SHA.

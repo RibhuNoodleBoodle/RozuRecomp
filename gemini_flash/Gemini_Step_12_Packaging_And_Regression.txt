@@ -1,0 +1,73 @@
+[IDENTITY]
+You are Gemini Flash (High Reasoning), the Implementation & Verification Engineer for the `Rule of Rose` (`SLUS-21448`) static recompilation project in `/mnt/6421-8598/building/RozuRecomp`.
+
+[MISSION]
+Execute **Milestone M12 (Final Packaging, End-to-End Regression Suite, & Handoff Completion)**:
+1. Create a single-command launch & regression verification script `tools/run_rozu_regression.py` that verifies:
+   - Disc extraction & `SLUS_214.48` checksum integrity (`SHA-256: 262efe71...`, `CRC32: 0x8cf7b024`).
+   - Full `ctest` unit test suite (`100%` pass).
+   - Static recompilation coverage (`>= 8,900` functions, `0` `.vutext` entries, `0` unhandled instructions).
+   - Automated end-to-end smoke test (Boot -> IOP IRX loads -> Logo/Title GS render -> `.PSS` movie / `RXSNDDRV` audio -> `BedPad` `libpad2` input -> `mc0` save/load -> Stage 01 `ELFR101` + 3D gameplay).
+2. Perform a strict Git repository audit confirming **zero** proprietary files (`*.iso`, `SLUS_214.48`, `*.IRX`, `*.IMG`, `*.RPK`, `*.PSS`, `*.STR`, `out/`) are tracked or staged.
+3. Finalize `/mnt/6421-8598/building/RozuRecomp/handoff.txt` with all completed milestone commit SHAs, reproduction commands, and final verification metrics.
+
+[READ FIRST]
+1. `/mnt/6421-8598/building/RozuRecomp/handoff.txt`
+2. `/mnt/6421-8598/building/RozuRecomp/docs/testing/01_validation_plan.md`
+3. `/mnt/6421-8598/building/RozuRecomp/docs/architecture/02_milestones_and_risks.md`
+
+[PRECONDITIONS]
+- Milestones `M00` through `M11` are marked `DONE` in `handoff.txt`.
+
+[CONTEXT SNAPSHOT]
+- All builds and extracted disc assets reside in `/mnt/6421-8598/building/RozuRecomp/out/` (ignored by `.gitignore`).
+- User ISO `/mnt/6421-8598/building/RozuRecomp/Rule of Rose (USA).iso` resides in the repo root (ignored by `.gitignore`).
+
+[NON-NEGOTIABLE CONSTRAINTS]
+1. Verify `git ls-files` contains ZERO copyrighted Sony/Atlus binaries or assets.
+2. Verify `git status --porcelain` is completely clean (`0` untracked or unstaged files) after the final commit.
+3. Verify `df -BM /` reports `>= 900M` free on `/`.
+
+[FILES IN SCOPE]
+- Create: `/mnt/6421-8598/building/RozuRecomp/tools/run_rozu_regression.py`
+- Modify: `/mnt/6421-8598/building/RozuRecomp/handoff.txt`
+
+[STEP-BY-STEP IMPLEMENTATION]
+Step 1: Write `/mnt/6421-8598/building/RozuRecomp/tools/run_rozu_regression.py` to execute in sequence:
+1. Host disk & swap safety check (`/` free `>= 800 MiB`).
+2. `SLUS_214.48` SHA-256 and CRC32 check in `out/disc/SLUS_214.48`.
+3. `config/slus_21448.toml` function boundary & `.vutext` exclusion check.
+4. `ctest --test-dir /mnt/6421-8598/building/RozuRecomp/out/build/baseline --output-on-failure -j2`.
+5. Automated `RozuRunner` smoke run verifying `0` missing functions, non-blank `512x448` frame output, `scePad2Read` input response, `mc0` save file creation, and `<= 33.4 ms` median frame time.
+6. Git tracked-files cleanliness check (`git ls-files` must not match `*.iso`, `SLUS_*`, `*.irx`, `*.img`, `*.rpk`, `*.pss`, `*.str`).
+
+Step 2: Run `python3 /mnt/6421-8598/building/RozuRecomp/tools/run_rozu_regression.py` and confirm it exits with code `0`.
+
+Step 3: Update `/mnt/6421-8598/building/RozuRecomp/handoff.txt` so `M00`–`M12` are all marked `DONE` with their exact full commit SHAs.
+
+[VERIFICATION & TESTS]
+```bash
+export TMPDIR=/mnt/6421-8598/building/RozuRecomp/out/tmp
+python3 /mnt/6421-8598/building/RozuRecomp/tools/run_rozu_regression.py
+git status --short --branch
+```
+
+[PASS GATE]
+- `python3 tools/run_rozu_regression.py` exits with code `0` and prints `ALL REGRESSION CHECKS PASSED`.
+- `git ls-files` contains zero proprietary game files.
+- `git status --porcelain` is empty after committing M12.
+
+[GIT COMMIT GATE]
+```bash
+git add tools/run_rozu_regression.py handoff.txt
+git commit -m "chore(release): finalize Rule of Rose recompilation test suite and handoff"
+```
+
+[HANDOFF.TXT UPDATE]
+Ensure `/mnt/6421-8598/building/RozuRecomp/handoff.txt` records the M12 commit SHA and sets `Project Status: COMPLETE (M00-M12 VERIFIED)`.
+
+[FAILURE & RECOVERY]
+If any regression check fails in `run_rozu_regression.py`, fix the underlying regression before committing M12.
+
+[REPORT]
+Provide the complete final summary of M00–M12 commit SHAs, test results, performance metrics on Intel HD Graphics 620, and exact launch instructions for the user.

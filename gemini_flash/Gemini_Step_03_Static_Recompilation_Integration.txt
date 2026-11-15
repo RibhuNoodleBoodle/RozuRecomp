@@ -1,0 +1,91 @@
+[IDENTITY]
+You are Gemini Flash (High Reasoning), the Implementation & Verification Engineer for the `Rule of Rose` (`SLUS-21448`) static recompilation project in `/mnt/6421-8598/building/RozuRecomp`.
+
+[MISSION]
+Execute **Milestone M03 (Static Recompilation Code Generation & Unity-Batched Runner Link)**:
+1. Run `ps2xRecomp` against `/mnt/6421-8598/building/RozuRecomp/config/slus_21448.toml` to generate C++ code and `register_functions.cpp` in `/mnt/6421-8598/building/RozuRecomp/out/recomp/`.
+2. Audit the generated C++ files for any `UNHANDLED` R5900/MMI/FPU/COP0/VU0-macro instructions or malformed C++ syntax, fixing any generator gaps in `ps2xRecomp/src/lib/code_generator.cpp`.
+3. Create a CMake/Unity-Batch build integration (`32–64` unity batch `.cpp` files or `CMAKE_UNITY_BUILD ON` with `UNITY_BUILD_BATCH_SIZE 160`) that compiles the generated `SLUS_214.48` functions and links them with `ps2xRuntime` and `ps2xIOP` into a runnable executable (`RozuRunner` / `ps2xRuntime`) using `ninja -j2` without exceeding `6.0 GiB` peak RSS.
+
+[READ FIRST]
+1. `/mnt/6421-8598/building/RozuRecomp/handoff.txt`
+2. `/mnt/6421-8598/building/RozuRecomp/docs/architecture/01_system_architecture.md`
+3. `/mnt/6421-8598/building/RozuRecomp/docs/architecture/03_open_decisions.md` (Decision 01: Unity Batching)
+4. `/mnt/6421-8598/building/RozuRecomp/ps2xRecomp/src/lib/ps2_recompiler.cpp`
+5. `/mnt/6421-8598/building/RozuRecomp/ps2xRecomp/src/lib/code_generator.cpp`
+6. `/mnt/6421-8598/building/RozuRecomp/ps2xRuntime/CMakeLists.txt`
+
+[PRECONDITIONS]
+- Milestone `M02` is marked `DONE` in `handoff.txt`.
+- `/mnt/6421-8598/building/RozuRecomp/config/slus_21448.toml` exists with `>= 8,900` functions and `0` `.vutext` entries.
+
+[CONTEXT SNAPSHOT]
+- Host RAM: `15 GiB` total, **`0 B` swap (`Swap: 0B`)**.
+- Compiling all ~8,963 functions in a single translation unit (`single_file_output = true`) will OOM-kill `g++`.
+- Compiling 8,963 individual `.cpp` files without unity batching will parse `<immintrin.h>` and `ps2_runtime.h` 8,963 times (~45+ minutes on 2C/4T i5-7200U).
+- Grouping the generated functions into **64 unity batch `.cpp` files** (~140 functions per batch) and building with `ninja -j2` and `-O1` (or `-O2 -fno-var-tracking-assignments`) compiles in ~3–6 minutes with peak RSS `< 3.5 GiB`!
+
+[NON-NEGOTIABLE CONSTRAINTS]
+1. Export `TMPDIR=/mnt/6421-8598/building/RozuRecomp/out/tmp` before every command.
+2. NEVER commit generated C++ files from `out/recomp/` into Git; keep generated guest C++ inside ignored `out/recomp/` and commit only the generator/CMake/recompiler support code.
+3. Never use `ninja` with more than `-j2` when compiling generated guest batches.
+
+[FILES IN SCOPE]
+- Modify (if needed for instruction coverage or batch emission): `/mnt/6421-8598/building/RozuRecomp/ps2xRecomp/src/lib/ps2_recompiler.cpp`, `code_generator.cpp`
+- Modify: `/mnt/6421-8598/building/RozuRecomp/ps2xRuntime/CMakeLists.txt` (or add a CMake option `PS2X_RECOMP_DIR` to link generated unity batches from `out/recomp/`)
+- Modify: `/mnt/6421-8598/building/RozuRecomp/handoff.txt`
+
+[STEP-BY-STEP IMPLEMENTATION]
+Step 1: Run `ps2xRecomp` on `/mnt/6421-8598/building/RozuRecomp/config/slus_21448.toml`:
+```bash
+export TMPDIR=/mnt/6421-8598/building/RozuRecomp/out/tmp
+mkdir -p /mnt/6421-8598/building/RozuRecomp/out/recomp
+/mnt/6421-8598/building/RozuRecomp/out/build/baseline/ps2xRecomp/ps2xRecomp \
+  /mnt/6421-8598/building/RozuRecomp/config/slus_21448.toml
+```
+
+Step 2: Audit the generated C++ files in `/mnt/6421-8598/building/RozuRecomp/out/recomp/`:
+```bash
+grep -rn "UNHANDLED\|TODO\|unimplemented" /mnt/6421-8598/building/RozuRecomp/out/recomp/ | head -n 50
+```
+If any valid R5900 / MMI / COP1 / COP2 instruction in `.text` or `.gnu.linkonce.t.*` was emitted as unhandled or invalid C++, implement its code generation in `ps2xRecomp/src/lib/code_generator.cpp`, add a unit test in `ps2xTest`, rebuild `ps2xRecomp`, and regenerate.
+
+Step 3: Verify `register_functions.cpp` in `out/recomp/`:
+- Confirm `g_ps2RecompiledFunctionTableBase == 0x00100000u` and `g_ps2RecompiledFunctionTableEnd >= 0x00295EB8u`.
+- Confirm all `~8,963` functions are populated in `g_ps2RecompiledFunctionTable`.
+
+Step 4: Create a unity-batch wrapper script or CMake integration so the generated functions compile in **64 batch `.cpp` files** (`batch_00.cpp` .. `batch_63.cpp` + `register_functions.cpp`) with `-O1 -fno-var-tracking-assignments` and link into the runner executable with `ninja -j2`.
+
+[VERIFICATION & TESTS]
+```bash
+export TMPDIR=/mnt/6421-8598/building/RozuRecomp/out/tmp
+/usr/bin/time -v ninja -C /mnt/6421-8598/building/RozuRecomp/out/build/baseline -j2
+ctest --test-dir /mnt/6421-8598/building/RozuRecomp/out/build/baseline --output-on-failure -j2
+```
+Also verify with `nm` or `readelf` on the linked runner binary that `g_ps2RecompiledFunctionTable`, `g_ps2RecompiledFunctionTableBase`, and `entry_100008` (or `_start_100008`) are linked into the executable.
+
+[PASS GATE]
+- `ps2xRecomp` exits `0` and generates all `~8,963` functions + `register_functions.cpp`.
+- `0` unhandled instructions in `.text` and `.gnu.linkonce.t.*`.
+- Runner executable compiles and links cleanly with `0` undefined symbols and peak RSS `< 6.0 GiB`.
+- `ctest` passes 100% of unit tests.
+
+[GIT COMMIT GATE]
+Stage only tracked source/CMake/tool/config/handoff files:
+```bash
+git status --short
+git add ps2xRecomp/ ps2xRuntime/ ps2xTest/ config/ tools/ handoff.txt
+git commit -m "feat(recomp): integrate unity-batched static recompilation build for SLUS_214.48"
+```
+
+[HANDOFF.TXT UPDATE]
+Update `/mnt/6421-8598/building/RozuRecomp/handoff.txt`:
+- Mark `M03` as `DONE` with the commit SHA, total compiled function count, build wall-clock time, and peak RSS.
+- Set `Next Milestone to Run: M04` (`gemini_flash/Gemini_Step_04_Runtime_Boot_And_Dispatch.txt`).
+
+[FAILURE & RECOVERY]
+- If `g++` exceeds `4.0 GiB` RSS on any batch file, increase batch count from `64` to `128` and pass `-O1 -fno-var-tracking -fno-var-tracking-assignments`.
+- See `gemini_flash/Gemini_Recovery_And_Debugging.txt` Playbook 1 (OOM Recovery).
+
+[REPORT]
+Report the total generated function count, unhandled instruction count (`0`), compile/link time, peak RSS, and the M03 commit SHA.

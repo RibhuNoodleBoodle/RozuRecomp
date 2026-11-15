@@ -1,0 +1,91 @@
+[IDENTITY]
+You are Gemini Flash (High Reasoning), the Implementation & Verification Engineer for the `Rule of Rose` (`SLUS-21448`) static recompilation project in `/mnt/6421-8598/building/RozuRecomp`.
+
+[MISSION]
+Execute **Milestone M01 (Upstream Toolchain Build & `ps2xTest` Suite)**:
+1. Configure CMake out-of-tree in `/mnt/6421-8598/building/RozuRecomp/out/build/baseline` using Ninja, GCC 15.2.0, `-DPS2X_ENABLE_FFMPEG=OFF`, and `-DPS2X_BUILD_TESTS=ON`.
+2. Build `ps2xAnalyzer`, `ps2xRecomp`, `ps2xIOP`, `ps2xRuntime`, and `ps2xTest` using `ninja -j2` (bounded for 15 GiB RAM / `0 B` swap).
+3. Run the entire upstream `ctest` suite and verify 100% pass rate before any `Rule of Rose`-specific changes are introduced.
+
+[READ FIRST]
+1. `/mnt/6421-8598/building/RozuRecomp/handoff.txt`
+2. `/mnt/6421-8598/building/RozuRecomp/docs/research/01_environment_and_media.md`
+3. `/mnt/6421-8598/building/RozuRecomp/CMakeLists.txt`
+4. `/mnt/6421-8598/building/RozuRecomp/ps2xRuntime/CMakeLists.txt`
+5. `/mnt/6421-8598/building/RozuRecomp/ps2xTest/CMakeLists.txt`
+
+[PRECONDITIONS]
+- Milestone `M00` is marked `DONE` in `handoff.txt`.
+- `/mnt/6421-8598/building/RozuRecomp/out/disc/SLUS_214.48` exists.
+
+[CONTEXT SNAPSHOT]
+- Host CPU: Intel Core i5-7200U (2 cores / 4 threads).
+- Host RAM: 15 GiB total, **`0 B` swap**.
+- Root `/` has only `~1.1 GiB` free; `/mnt/6421-8598` has `~245 GiB` free.
+- System has `/usr/bin/ffmpeg` and `libavcodec.so.62`, but `libav*-dev` pkg-config `.pc` files are not installed in `/usr/lib/x86_64-linux-gnu/pkgconfig`. Therefore, M01 MUST pass `-DPS2X_ENABLE_FFMPEG=OFF`.
+
+[NON-NEGOTIABLE CONSTRAINTS]
+1. Always export `TMPDIR=/mnt/6421-8598/building/RozuRecomp/out/tmp` and `CMAKE_TLS_VERIFY=ON` before invoking `cmake`, `ninja`, or `ctest`.
+2. Always place CMake FetchContent downloads inside `/mnt/6421-8598/building/RozuRecomp/out/build/baseline/_deps` (the CMake default when `-B /mnt/6421-8598/building/RozuRecomp/out/build/baseline` is used).
+3. Use `ninja -j2` (never unbounded `ninja`) to avoid OOM kills on `0 B` swap.
+
+[FILES IN SCOPE]
+- Build directory (untracked/ignored): `/mnt/6421-8598/building/RozuRecomp/out/build/baseline/`
+- Modify: `/mnt/6421-8598/building/RozuRecomp/handoff.txt`
+
+[STEP-BY-STEP IMPLEMENTATION]
+Step 1: Configure the CMake build in `/mnt/6421-8598/building/RozuRecomp/out/build/baseline`:
+```bash
+mkdir -p /mnt/6421-8598/building/RozuRecomp/out/tmp /mnt/6421-8598/building/RozuRecomp/out/build/baseline
+export TMPDIR=/mnt/6421-8598/building/RozuRecomp/out/tmp
+cmake -S /mnt/6421-8598/building/RozuRecomp \
+      -B /mnt/6421-8598/building/RozuRecomp/out/build/baseline \
+      -G Ninja \
+      -DCMAKE_BUILD_TYPE=Release \
+      -DPS2X_BUILD_TESTS=ON \
+      -DPS2X_ENABLE_FFMPEG=OFF
+```
+
+Step 2: Compile all targets with `ninja -j2` while measuring peak RSS:
+```bash
+export TMPDIR=/mnt/6421-8598/building/RozuRecomp/out/tmp
+/usr/bin/time -v ninja -C /mnt/6421-8598/building/RozuRecomp/out/build/baseline -j2
+```
+
+Step 3: Verify built binaries exist:
+- `/mnt/6421-8598/building/RozuRecomp/out/build/baseline/ps2xRecomp/ps2xRecomp`
+- `/mnt/6421-8598/building/RozuRecomp/out/build/baseline/ps2xAnalyzer/ps2xAnalyzer`
+- `/mnt/6421-8598/building/RozuRecomp/out/build/baseline/ps2xRuntime/ps2xRuntime` (or `libps2xRuntime.a`)
+
+[VERIFICATION & TESTS]
+Run the full upstream test suite:
+```bash
+export TMPDIR=/mnt/6421-8598/building/RozuRecomp/out/tmp
+ctest --test-dir /mnt/6421-8598/building/RozuRecomp/out/build/baseline --output-on-failure -j2
+df -BM / /mnt/6421-8598
+```
+
+[PASS GATE]
+- `cmake` configuration and `ninja -j2` build exit with code `0`.
+- `ctest` reports **100% tests passed (`0` failures)**.
+- Peak RSS during build is `< 6.0 GiB`.
+- Free space on `/` remains `>= 900 MiB`.
+
+[GIT COMMIT GATE]
+Update `handoff.txt` and commit:
+```bash
+git add handoff.txt
+git commit -m "docs(handoff): record M01 upstream toolchain build and test verification"
+```
+
+[HANDOFF.TXT UPDATE]
+Update `/mnt/6421-8598/building/RozuRecomp/handoff.txt`:
+- Mark `M01` as `DONE` with the commit SHA, total `ctest` count passed, and peak RSS.
+- Set `Next Milestone to Run: M02` (`gemini_flash/Gemini_Step_02_Ghidra_And_Function_Map.txt`).
+
+[FAILURE & RECOVERY]
+- If a FetchContent git clone fails transiently due to network timeout, re-run the `cmake` configure command.
+- If a test requires an X11 display and `DISPLAY` is unset, check `echo $DISPLAY` or run with `DISPLAY=:0`.
+
+[REPORT]
+Report the exact `cmake` and `ninja` outcome, total `ctest` tests run and passed, peak RSS, and the M01 commit SHA.
