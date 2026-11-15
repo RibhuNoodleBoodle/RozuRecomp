@@ -353,6 +353,7 @@ public:
                                const char *debugName);
     void setMissingFunctionPolicy(MissingFunctionPolicy policy);
     MissingFunctionPolicy missingFunctionPolicy() const;
+    bool hasMissingFunctionReported() const;
     void resetMissingFunctionReportOnce();
 
     static const IoPaths &getIoPaths();
@@ -389,6 +390,8 @@ public:
 
     void requestStop();
     bool isStopRequested() const;
+    void setMaxFrames(uint64_t maxFrames);
+    void setMaxSeconds(double maxSeconds);
 
     EeScheduler &eeScheduler();
     const EeScheduler &eeScheduler() const;
@@ -519,6 +522,8 @@ private:
     std::atomic<uint32_t> m_missingFunctionPolicy{static_cast<uint32_t>(MissingFunctionPolicy::ContinueToTarget)};
     std::atomic<bool> m_missingFunctionReported{false};
     std::atomic<bool> m_stopRequested{false};
+    uint64_t m_maxFrames = 0u;
+    double m_maxSeconds = 0.0;
     DebugUiCallback m_debugUiInitCallback = nullptr;
     DebugUiCallback m_debugUiDrawCallback = nullptr;
     DebugUiCallback m_debugUiShutdownCallback = nullptr;

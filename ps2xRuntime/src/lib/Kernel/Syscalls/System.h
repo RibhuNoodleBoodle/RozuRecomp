@@ -36,4 +36,7 @@ namespace ps2_syscalls
     void Copy(uint8_t *rdram, R5900Context *ctx, PS2Runtime *runtime);
     void GetEntryAddress(uint8_t *rdram, R5900Context *ctx, PS2Runtime *runtime);
     void RegisterExitHandler(uint8_t *rdram, R5900Context *ctx, PS2Runtime *runtime);
+    void SetVTLBRefillHandler(uint8_t *rdram, R5900Context *ctx, PS2Runtime *runtime);
+    void SetVCommonHandler(uint8_t *rdram, R5900Context *ctx, PS2Runtime *runtime);
+    void SetVInterruptHandler(uint8_t *rdram, R5900Context *ctx, PS2Runtime *runtime);
 }

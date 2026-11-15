@@ -165,6 +165,27 @@ def is_save_ra_or_prologue(ins: int) -> bool:
     return op in (0x2B, 0x3F, 0x1E) and rs == 29 and rt == 31
 
 
+def is_branch_or_jump(ins: int) -> bool:
+    op = ins >> 26
+    if op in (1, 2, 3, 4, 5, 6, 7, 0x14, 0x15, 0x16, 0x17):
+        return True
+    if op == 0 and (ins & 0x3F) in (8, 9):
+        return True
+    if op in (0x11, 0x12) and ((ins >> 21) & 0x1F) == 8:
+        return True
+    return False
+
+
+def is_stack_restore_or_ra_load(ins: int) -> bool:
+    op = ins >> 26
+    rs = (ins >> 21) & 0x1F
+    rt = (ins >> 16) & 0x1F
+    imm = ins & 0xFFFF
+    if op in (9, 0x19) and rs == 29 and rt == 29 and (imm & 0x8000) == 0 and imm != 0:
+        return True
+    return op in (0x23, 0x37, 0x1E) and rs == 29 and rt == 31
+
+
 def discover_text_functions(
     e_entry: int,
     elf_bytes: bytes,
@@ -219,12 +240,31 @@ def discover_text_functions(
             if in_text(target):
                 local_targets.add(target)
                 if target > va:
-                    fwd_branch_map[va] = target
+                    fwd_branch_map[va] = max(fwd_branch_map.get(va, 0), target)
 
-    for hex_addr in re.findall(r'target\s*=\s*"0x([0-9A-Fa-f]+)"', jt_block):
-        target = int(hex_addr, 16)
-        if in_text(target):
-            local_targets.add(target)
+    # Record jump-table branch spans and targets so switch arms are never split.
+    for m in re.finditer(r'address\s*=\s*"0x([0-9A-Fa-f]+)".*?targets\s*=\s*\[(.*?)\]', jt_block, re.S):
+        jva = int(m.group(1), 16)
+        for hex_addr in re.findall(r'target\s*=\s*"0x([0-9A-Fa-f]+)"', m.group(2)):
+            target = int(hex_addr, 16)
+            if in_text(target):
+                local_targets.add(target)
+                if target > jva:
+                    fwd_branch_map[jva] = max(fwd_branch_map.get(jva, 0), target)
+
+    def has_entry_boundary(va: int) -> bool:
+        if va == e_entry:
+            return True
+        if va - 4 >= text_va and rword(va - 4) == 0:
+            return True
+        if va - 8 >= text_va:
+            prev2 = rword(va - 8)
+            op2 = prev2 >> 26
+            if prev2 == 0x03E00008 or op2 == 2 or prev2 == 0x42000018:
+                return True
+            if op2 == 4 and ((prev2 >> 21) & 0x1F) == ((prev2 >> 16) & 0x1F):
+                return True
+        return False
 
     # Tier 1 trusted entry points: e_entry, JALs, .ctors/.dtors, vtables, SDK matches
     trusted: Set[int] = {e_entry} | jals | {addr for addr in sdk_names if in_text(addr)}
@@ -239,58 +279,97 @@ def discover_text_functions(
                 if in_text(word):
                     trusted.add(word)
 
-    # Valid function pointers in .data and .rodata (guarded against non-code integers)
+    # Valid function pointers in .data and .rodata (guarded against constants falling mid-function)
     data_ptrs: Set[int] = set()
     for name, _stype, _sh_flags, _sh_addr, sh_off, sh_size in sections:
         if name in (".data", ".rodata"):
             raw = elf_bytes[sh_off : sh_off + sh_size]
             for (word,) in struct.iter_unpack("<I", raw):
-                if in_text(word) and word not in local_targets:
+                if in_text(word) and word not in local_targets and has_entry_boundary(word):
                     first_ins = rword(word)
                     if is_save_ra_or_prologue(first_ins) or first_ins == 0x03E00008:
                         data_ptrs.add(word)
 
     seeds: Set[int] = trusted | data_ptrs
 
-    # Post-epilogue (jr $ra; delay; nops) scan guarded by active forward branches
-    after_jr: Set[int] = set()
-    max_fwd = text_va
-    i = (e_entry - text_va) // 4
-    while i < nwords - 2:
-        va = text_va + i * 4
-        if va in seeds:
-            max_fwd = va
-        if va in fwd_branch_map and fwd_branch_map[va] > max_fwd:
-            max_fwd = fwd_branch_map[va]
-        if text_words[i] == 0x03E00008:  # jr $ra
-            k = i + 2
-            while k < nwords and text_words[k] == 0:
-                k += 1
-            if k < nwords:
-                next_va = text_va + k * 4
-                if next_va > max_fwd and next_va not in local_targets:
-                    if not (
-                        text_words[k] == 0x03E00008
-                        and k + 1 < nwords
-                        and is_stack_prologue(text_words[k + 1])
-                    ):
-                        after_jr.add(next_va)
-                        max_fwd = next_va
-        i += 1
+    # Two-pass post-terminator scan: jr $ra, eret, backward unconditional b, and tail-call j
+    def scan_after_terminators(known: Set[int]) -> Set[int]:
+        found: Set[int] = set()
+        max_fwd = text_va
+        i = (e_entry - text_va) // 4
+        while i < nwords - 2:
+            va = text_va + i * 4
+            if va in known:
+                max_fwd = va
+            if va in fwd_branch_map and fwd_branch_map[va] > max_fwd:
+                max_fwd = fwd_branch_map[va]
+            ins = text_words[i]
+            op = ins >> 26
+            is_jr_ra = ins == 0x03E00008
+            is_eret = ins == 0x42000018
+            is_uncond_b_back = (
+                op == 4
+                and ((ins >> 21) & 0x1F) == ((ins >> 16) & 0x1F)
+                and (ins & 0x8000) != 0
+            )
+            is_j_tail = False
+            if op == 2:
+                target = ((va + 4) & 0xF0000000) | ((ins & 0x03FFFFFF) << 2)
+                delay_ins = text_words[i + 1]
+                prev_ins = text_words[i - 1] if i > 0 else 0
+                if (
+                    target <= va
+                    or target in known
+                    or is_stack_restore_or_ra_load(delay_ins)
+                    or is_stack_restore_or_ra_load(prev_ins)
+                ):
+                    is_j_tail = True
+            if is_jr_ra or is_eret or is_uncond_b_back or is_j_tail:
+                if not is_eret and (va + 4) in known:
+                    i += 1
+                    continue
+                k = i + (1 if is_eret else 2)
+                while k < nwords and text_words[k] == 0:
+                    k += 1
+                if k < nwords:
+                    next_va = text_va + k * 4
+                    if next_va > max_fwd and next_va not in local_targets:
+                        if not (
+                            text_words[k] == 0x03E00008
+                            and k + 1 < nwords
+                            and is_stack_prologue(text_words[k + 1])
+                        ):
+                            found.add(next_va)
+                            max_fwd = next_va
+            i += 1
+        return found
 
-    combined = sorted(seeds | after_jr)
+    after_pass1 = scan_after_terminators(seeds)
+    after_term = scan_after_terminators(seeds | after_pass1)
+    combined = sorted(seeds | after_term)
 
-    # Prologue sweep outside delayed-prologue windows and local branch targets
+    # Prologue sweep: reject delay slots and mid-function stack allocations without terminator/nop boundary
     prologues: Set[int] = set()
     for idx, ins in enumerate(text_words):
         va = text_va + idx * 4
         if va < e_entry or va in local_targets or not is_stack_prologue(ins):
             continue
+        if is_branch_or_jump(text_words[idx - 1]):
+            continue
         pos = bisect.bisect_right(combined, va) - 1
         prev_seed = combined[pos] if pos >= 0 else 0
         if va - prev_seed <= 24:
             continue
-        prologues.add(va)
+        prev1 = text_words[idx - 1]
+        prev2 = text_words[idx - 2] if idx >= 2 else 0
+        p2op = prev2 >> 26
+        prev2_is_call_or_term = (
+            p2op in (2, 3)
+            or (p2op == 0 and (prev2 & 0x3F) in (8, 9, 12, 13))
+            or (p2op == 4 and ((prev2 >> 21) & 0x1F) == ((prev2 >> 16) & 0x1F))
+        )
+        if prev1 == 0 or prev2_is_call_or_term:
+            prologues.add(va)
 
     starts = sorted(set(combined) | prologues)
 

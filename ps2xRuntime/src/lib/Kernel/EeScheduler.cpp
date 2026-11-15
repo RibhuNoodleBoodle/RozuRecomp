@@ -54,6 +54,18 @@ namespace
     constexpr uint64_t kVBlankDurationCycles = microsecondsToEeCycles(500u);
     constexpr uint64_t kAlarmTickCycles = microsecondsToEeCycles(kAlarmTickMicroseconds);
 
+    bool hasActiveInterruptInvocation(const GuestThread *thread) noexcept
+    {
+        if (!thread || thread->invocations.empty())
+        {
+            return false;
+        }
+        const GuestInvocationKind kind = thread->invocations.back().kind;
+        return kind == GuestInvocationKind::Interrupt ||
+               kind == GuestInvocationKind::Alarm ||
+               kind == GuestInvocationKind::GsCallback;
+    }
+
     template <typename Map>
     int allocatePositiveId(int &nextId, const Map &objects)
     {
@@ -294,7 +306,7 @@ void EeScheduler::run()
 
         try
         {
-            m_insideInterrupt = !running->invocations.empty() && running->invocations.back().kind == GuestInvocationKind::Interrupt;
+            m_insideInterrupt = hasActiveInterruptInvocation(running);
             m_guestExecuting.store(true, std::memory_order_release);
             function(m_rdram, &context, &m_runtime);
             m_guestExecuting.store(false, std::memory_order_release);
@@ -314,7 +326,7 @@ void EeScheduler::run()
         }
 
         processPendingEvents();
-        if (m_rescheduleRequested && m_currentThreadId != 0)
+        if (m_rescheduleRequested && m_currentThreadId != 0 && !hasActiveInterruptInvocation(currentThread()))
         {
             GuestThread *preempted = currentThread();
             assert(preempted != nullptr);
@@ -377,7 +389,9 @@ bool EeScheduler::checkpointDue(uint32_t cycles) noexcept
     }
 
     const GuestThread *running = currentThread();
-    if (running != nullptr && hasReadyAtOrAbovePriority(running->currentPriority))
+    if (running != nullptr &&
+        !hasActiveInterruptInvocation(running) &&
+        hasReadyAtOrAbovePriority(running->currentPriority))
     {
         m_rescheduleRequested = true;
         m_timeSliceExpired = true;
@@ -1734,6 +1748,10 @@ void EeScheduler::applyPendingPreemption()
     }
     GuestThread *self = currentThread();
     assert(self != nullptr);
+    if (hasActiveInterruptInvocation(self))
+    {
+        return;
+    }
     enqueueReady(*self, !m_timeSliceExpired);
     m_currentThreadId = 0;
     m_rescheduleRequested = false;

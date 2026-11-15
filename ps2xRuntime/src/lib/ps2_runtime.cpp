@@ -91,6 +91,8 @@ namespace
     constexpr uint32_t kGuestHeapDefaultAlignment = 16u;
     constexpr uint32_t kGuestHeapSafetyPad = 0x1000u;
     constexpr uint32_t kGuestHeapHardLimit = 0x01F00000u;
+    constexpr uint32_t kAsyncCallbackStackDefaultFloor = 0x01F40000u;
+    constexpr uint32_t kAsyncCallbackStackDefaultTop = 0x01FC0000u;
 
     constexpr uint32_t COP0_CAUSE_EXCCODE_MASK = 0x0000007Cu;
     constexpr uint32_t COP0_CAUSE_BD = 0x80000000u;
@@ -503,8 +505,8 @@ PS2Runtime::PS2Runtime()
     m_guestHeapLimit = std::min(kGuestHeapHardLimit, PS2_RAM_SIZE);
     m_guestHeapSuggestedBase = kGuestHeapDefaultBase;
     m_guestHeapConfigured = false;
-    m_asyncCallbackStackFloor = std::min(kGuestHeapHardLimit, PS2_RAM_SIZE);
-    m_asyncCallbackStackTop = PS2_RAM_SIZE;
+    m_asyncCallbackStackFloor = std::min(kAsyncCallbackStackDefaultFloor, PS2_RAM_SIZE);
+    m_asyncCallbackStackTop = std::min(kAsyncCallbackStackDefaultTop, PS2_RAM_SIZE);
 }
 
 void PS2Runtime::setDebugUiCallbacks(DebugUiCallback initCallback,
@@ -971,9 +973,10 @@ bool PS2Runtime::loadELF(const std::string &elfPath)
     }
     {
         std::lock_guard<std::mutex> lock(m_asyncCallbackStackMutex);
-        const uint32_t hardLimit = std::min(kGuestHeapHardLimit, PS2_RAM_SIZE);
-        m_asyncCallbackStackFloor = std::min(std::max(hardLimit, suggestedHeapBase), PS2_RAM_SIZE);
-        m_asyncCallbackStackTop = PS2_RAM_SIZE;
+        const uint32_t defaultFloor = std::min(kAsyncCallbackStackDefaultFloor, PS2_RAM_SIZE);
+        const uint32_t defaultTop = std::min(kAsyncCallbackStackDefaultTop, PS2_RAM_SIZE);
+        m_asyncCallbackStackFloor = std::min(std::max(defaultFloor, suggestedHeapBase), PS2_RAM_SIZE);
+        m_asyncCallbackStackTop = (defaultTop > m_asyncCallbackStackFloor) ? defaultTop : PS2_RAM_SIZE;
     }
 
     LoadedModule module;
@@ -1177,6 +1180,11 @@ void PS2Runtime::setMissingFunctionPolicy(MissingFunctionPolicy policy)
 PS2Runtime::MissingFunctionPolicy PS2Runtime::missingFunctionPolicy() const
 {
     return static_cast<MissingFunctionPolicy>(m_missingFunctionPolicy.load(std::memory_order_acquire));
+}
+
+bool PS2Runtime::hasMissingFunctionReported() const
+{
+    return m_missingFunctionReported.load(std::memory_order_acquire);
 }
 
 void PS2Runtime::resetMissingFunctionReportOnce()
@@ -2194,6 +2202,16 @@ bool PS2Runtime::isStopRequested() const
     return m_stopRequested.load(std::memory_order_relaxed);
 }
 
+void PS2Runtime::setMaxFrames(uint64_t maxFrames)
+{
+    m_maxFrames = maxFrames;
+}
+
+void PS2Runtime::setMaxSeconds(double maxSeconds)
+{
+    m_maxSeconds = maxSeconds;
+}
+
 EeScheduler &PS2Runtime::eeScheduler()
 {
     return *m_eeScheduler;
@@ -2385,9 +2403,12 @@ void PS2Runtime::run()
         }
         gameThreadFinished.store(true, std::memory_order_release); });
 
+    const auto runStart = std::chrono::steady_clock::now();
     uint64_t tick = 0;
+    uint64_t hostFrames = 0;
     while (!isStopRequested() && !gameThreadFinished.load(std::memory_order_acquire))
     {
+        ++hostFrames;
         PS2_IF_AGRESSIVE_LOGS({
             tick++;
             if ((tick % 120) == 0)
@@ -2452,12 +2473,63 @@ void PS2Runtime::run()
             requestStop();
             break;
         }
+
+        const uint64_t guestVsyncs = m_memory.gs().vsyncTick.load(std::memory_order_acquire);
+        if (m_maxFrames > 0u && guestVsyncs >= m_maxFrames)
+        {
+            RUNTIME_LOG("[run] reached max guest frames (" << m_maxFrames << "), stopping cleanly");
+            requestStop();
+            break;
+        }
+
+        if (m_maxSeconds > 0.0)
+        {
+            const double elapsedSec = std::chrono::duration<double>(std::chrono::steady_clock::now() - runStart).count();
+            if (elapsedSec >= m_maxSeconds)
+            {
+                RUNTIME_LOG("[run] reached max seconds (" << m_maxSeconds << "), stopping cleanly");
+                requestStop();
+                break;
+            }
+        }
     }
 
     requestStop();
     if (gameThread.joinable())
     {
         gameThread.join();
+    }
+
+    {
+        const uint64_t vsyncTicks = m_memory.gs().vsyncTick.load(std::memory_order_acquire);
+        const uint32_t lastPc = m_debugPc.load(std::memory_order_relaxed);
+        const uint32_t lastRa = m_debugRa.load(std::memory_order_relaxed);
+        const auto eeSnap = m_eeScheduler ? m_eeScheduler->snapshot() : EeKernelSnapshot{};
+        const size_t activeThreads = eeSnap.threads.size();
+        std::cout << "[run:summary] vsyncTicks=" << vsyncTicks
+                  << " hostFrames=" << hostFrames
+                  << " pc=0x" << std::hex << lastPc
+                  << " ra=0x" << lastRa << std::dec
+                  << " activeThreads=" << activeThreads
+                  << " dma=" << m_memory.dmaStartCount()
+                  << " gif=" << m_memory.gifCopyCount()
+                  << " gsw=" << m_memory.gsWriteCount()
+                  << " vif=" << m_memory.vifWriteCount()
+                  << " missingFunction=" << (hasMissingFunctionReported() ? 1 : 0)
+                  << std::endl;
+        for (const auto &t : eeSnap.threads)
+        {
+            std::cout << "  [thread] id=" << t.id
+                      << " entry=0x" << std::hex << t.entry
+                      << " pc=0x" << t.pc
+                      << " ra=0x" << t.ra
+                      << " sp=0x" << t.sp << std::dec
+                      << " prio=" << t.currentPriority
+                      << " status=" << static_cast<int>(t.status)
+                      << " wait=" << static_cast<int>(t.waitReason)
+                      << " waitId=" << t.waitId
+                      << std::endl;
+        }
     }
 
     if (m_debugUiInitialized && m_debugUiShutdownCallback)

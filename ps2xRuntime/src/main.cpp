@@ -140,12 +140,72 @@ namespace
         return result;
     }
 
-    std::filesystem::path getExecutablePath(int argc, char *argv[])
+    struct RunnerCliOptions
     {
-        if (argc >= 2 && argv[1] && argv[1][0] != '\0')
+        std::string elfArg;
+        std::string cdImageArg;
+        std::string cdRootArg;
+        uint64_t maxFrames = 0u;
+        double maxSeconds = 0.0;
+    };
+
+    RunnerCliOptions parseCliOptions(int argc, char *argv[])
+    {
+        RunnerCliOptions opts;
+        for (int i = 1; i < argc; ++i)
+        {
+            const std::string arg = argv[i] ? std::string(argv[i]) : std::string();
+            if (arg == "--cd-image" || arg == "--iso")
+            {
+                if (i + 1 >= argc)
+                {
+                    throw std::runtime_error("Missing value for " + arg);
+                }
+                opts.cdImageArg = argv[++i];
+            }
+            else if (arg == "--cd-root")
+            {
+                if (i + 1 >= argc)
+                {
+                    throw std::runtime_error("Missing value for --cd-root");
+                }
+                opts.cdRootArg = argv[++i];
+            }
+            else if (arg == "--max-frames")
+            {
+                if (i + 1 >= argc)
+                {
+                    throw std::runtime_error("Missing value for --max-frames");
+                }
+                opts.maxFrames = std::stoull(argv[++i]);
+            }
+            else if (arg == "--max-seconds")
+            {
+                if (i + 1 >= argc)
+                {
+                    throw std::runtime_error("Missing value for --max-seconds");
+                }
+                opts.maxSeconds = std::stod(argv[++i]);
+            }
+            else if (arg == "--help" || arg == "-h")
+            {
+                std::cout << "Usage: ps2EntryRunner [<guest_elf>] [--cd-image <iso>] [--cd-root <dir>] [--max-frames <N>] [--max-seconds <S>]\n";
+                std::exit(0);
+            }
+            else if (!arg.empty() && arg[0] != '-' && opts.elfArg.empty())
+            {
+                opts.elfArg = arg;
+            }
+        }
+        return opts;
+    }
+
+    std::filesystem::path getExecutablePath(const RunnerCliOptions &opts)
+    {
+        if (!opts.elfArg.empty())
         {
             std::cout << "Using argv boot path" << std::endl;
-            return std::filesystem::path(argv[1]);
+            return std::filesystem::path(opts.elfArg);
         }
 #if defined(PS2X_DEFAULT_BOOT_ELF)
         std::cout << "Using default boot file" << std::endl;
@@ -173,7 +233,8 @@ int main(int argc, char *argv[])
 
     try
     {
-        std::filesystem::path pathObj = getExecutablePath(argc, argv);
+        const RunnerCliOptions cliOpts = parseCliOptions(argc, argv);
+        std::filesystem::path pathObj = getExecutablePath(cliOpts);
 
         std::string filePathStr = pathObj.string();
         std::string elfName = pathObj.filename().string();
@@ -194,6 +255,8 @@ int main(int argc, char *argv[])
         }
 
         PS2Runtime runtime;
+        runtime.setMaxFrames(cliOpts.maxFrames);
+        runtime.setMaxSeconds(cliOpts.maxSeconds);
 #if defined(PS2X_ENABLE_DEBUG_UI) && !defined(PLATFORM_VITA)
         // This hook is to prevent leak rlimgui deps to recompiler etc
         PS2DebugPanel debugPanel;
@@ -226,6 +289,27 @@ int main(int argc, char *argv[])
             return 1;
         }
 
+        if (!cliOpts.cdImageArg.empty() || !cliOpts.cdRootArg.empty() || std::getenv("PS2_CD_IMAGE"))
+        {
+            PS2Runtime::IoPaths ioPaths = PS2Runtime::getIoPaths();
+            if (!cliOpts.cdImageArg.empty())
+            {
+                ioPaths.cdImage = std::filesystem::path(cliOpts.cdImageArg);
+            }
+            else if (ioPaths.cdImage.empty())
+            {
+                if (const char *envIso = std::getenv("PS2_CD_IMAGE"); envIso && envIso[0] != '\0')
+                {
+                    ioPaths.cdImage = std::filesystem::path(envIso);
+                }
+            }
+            if (!cliOpts.cdRootArg.empty())
+            {
+                ioPaths.cdRoot = std::filesystem::path(cliOpts.cdRootArg);
+            }
+            PS2Runtime::setIoPaths(ioPaths);
+        }
+
         runtime.run();
 
 #ifdef _DEBUG
@@ -233,7 +317,7 @@ int main(int argc, char *argv[])
 #endif
         std::cout.flush();
         std::cerr.flush();
-        std::_Exit(0);
+        std::_Exit(runtime.hasMissingFunctionReported() ? 2 : 0);
     }
     catch (const std::exception &e)
     {

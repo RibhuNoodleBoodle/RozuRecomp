@@ -180,8 +180,18 @@ namespace ps2_syscalls
         setReturnS32(ctx, KE_OK);
     }
 
-    void InitThread(uint8_t *, R5900Context *ctx, PS2Runtime *)
+    void InitThread(uint8_t *rdram, R5900Context *ctx, PS2Runtime *runtime)
     {
+        if (runtime && ctx)
+        {
+            EeScheduler &ee = scheduler(rdram, ctx, runtime);
+            int oldPriority = 0;
+            ee.changePriority(ee.currentThreadId() != 0 ? ee.currentThreadId() : EeScheduler::kMainThreadId,
+                              1,
+                              false,
+                              oldPriority);
+            ee.transferIfRequested(false);
+        }
         setReturnS32(ctx, EeScheduler::kMainThreadId);
     }
 
@@ -221,16 +231,17 @@ namespace ps2_syscalls
 
         // PS2SDK EE t_ee_thread: status, func, stack, stack_size, gp_reg,
         // initial_priority, current_priority, attr, option.
-        const EeThreadCreateParams decoded{
-            param->attr,
-            param->func,
-            param->stack,
-            static_cast<uint32_t>(param->stack_size),
-            param->gp_reg,
-            param->initial_priority,
-            param->option,
-        };
-        setReturnS32(ctx, scheduler(rdram, ctx, runtime).createThread(decoded));
+            const EeThreadCreateParams decoded{
+                param->attr,
+                param->func,
+                param->stack,
+                static_cast<uint32_t>(param->stack_size),
+                param->gp_reg,
+                param->initial_priority,
+                param->option,
+            };
+            const int newId = scheduler(rdram, ctx, runtime).createThread(decoded);
+            setReturnS32(ctx, newId);
     }
 
     void DeleteThread(uint8_t *rdram, R5900Context *ctx, PS2Runtime *runtime)

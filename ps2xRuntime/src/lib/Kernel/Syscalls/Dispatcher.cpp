@@ -22,6 +22,15 @@ namespace ps2_syscalls
         case 0x04:
             ExitThread(rdram, ctx, runtime);
             return true;
+        case 0x0C:
+            SetVTLBRefillHandler(rdram, ctx, runtime);
+            return true;
+        case 0x0D:
+            SetVCommonHandler(rdram, ctx, runtime);
+            return true;
+        case 0x0E:
+            SetVInterruptHandler(rdram, ctx, runtime);
+            return true;
         case 0x10:
             AddIntcHandler(rdram, ctx, runtime);
             return true;
@@ -63,11 +72,13 @@ namespace ps2_syscalls
             SetAlarm(rdram, ctx, runtime);
             return true;
         case 0x19:
+        case 0xFD:
         case 0xFE:
             CancelAlarm(rdram, ctx, runtime);
             return true;
         case static_cast<uint32_t>(-0x1E):
         case static_cast<uint32_t>(-0xFD):
+        case static_cast<uint32_t>(-0xFE):
             iSetAlarm(rdram, ctx, runtime);
             return true;
         case static_cast<uint32_t>(-0x1F):

@@ -998,4 +998,49 @@ namespace ps2_syscalls
 
         setReturnS32(ctx, 0);
     }
+
+    namespace
+    {
+        std::mutex g_exception_vector_mutex;
+        std::unordered_map<uint64_t, uint32_t> g_exception_vectors;
+
+        void setExceptionVectorHandler(uint32_t kind, R5900Context *ctx)
+        {
+            const uint32_t cause = getRegU32(ctx, 4);
+            const uint32_t handler = getRegU32(ctx, 5);
+            const uint64_t key = (static_cast<uint64_t>(kind) << 32) | cause;
+            uint32_t previous = 0u;
+            {
+                std::lock_guard<std::mutex> lock(g_exception_vector_mutex);
+                auto it = g_exception_vectors.find(key);
+                if (it != g_exception_vectors.end())
+                {
+                    previous = it->second;
+                }
+                g_exception_vectors[key] = handler;
+            }
+            setReturnU32(ctx, previous);
+        }
+    }
+
+    void SetVTLBRefillHandler(uint8_t *rdram, R5900Context *ctx, PS2Runtime *runtime)
+    {
+        (void)rdram;
+        (void)runtime;
+        setExceptionVectorHandler(0x0Cu, ctx);
+    }
+
+    void SetVCommonHandler(uint8_t *rdram, R5900Context *ctx, PS2Runtime *runtime)
+    {
+        (void)rdram;
+        (void)runtime;
+        setExceptionVectorHandler(0x0Du, ctx);
+    }
+
+    void SetVInterruptHandler(uint8_t *rdram, R5900Context *ctx, PS2Runtime *runtime)
+    {
+        (void)rdram;
+        (void)runtime;
+        setExceptionVectorHandler(0x0Eu, ctx);
+    }
 }

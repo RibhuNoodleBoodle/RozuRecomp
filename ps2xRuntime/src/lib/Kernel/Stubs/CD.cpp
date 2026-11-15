@@ -986,4 +986,52 @@ namespace ps2_stubs
         }
         setReturnS32(ctx, 1);
     }
+
+    void sceCdReadDvdDualInfo(uint8_t *rdram, R5900Context *ctx, PS2Runtime *runtime)
+    {
+        (void)runtime;
+        const uint32_t onDualAddr = getRegU32(ctx, 4);
+        const uint32_t layer1StartAddr = getRegU32(ctx, 5);
+        if (uint32_t *onDual = reinterpret_cast<uint32_t *>(getMemPtr(rdram, onDualAddr)); onDual)
+        {
+            *onDual = 0u;
+        }
+        if (uint32_t *layer1Start = reinterpret_cast<uint32_t *>(getMemPtr(rdram, layer1StartAddr)); layer1Start)
+        {
+            *layer1Start = 0u;
+        }
+        g_lastCdError = 0;
+        setReturnS32(ctx, 1);
+    }
+
+    void sceCdLayerSearchFile(uint8_t *rdram, R5900Context *ctx, PS2Runtime *runtime)
+    {
+        const int32_t layer = static_cast<int32_t>(getRegU32(ctx, 6));
+        if (layer != 0)
+        {
+            g_lastCdError = -1;
+            setReturnS32(ctx, 0);
+            return;
+        }
+        sceCdSearchFile(rdram, ctx, runtime);
+    }
+
+    void sceCdSetTimeout(uint8_t *rdram, R5900Context *ctx, PS2Runtime *runtime)
+    {
+        (void)rdram;
+        (void)runtime;
+        g_lastCdError = 0;
+        setReturnS32(ctx, 1);
+    }
+
+    void sceCdPOffCallback(uint8_t *rdram, R5900Context *ctx, PS2Runtime *runtime)
+    {
+        (void)rdram;
+        (void)runtime;
+        static uint32_t s_poffCallback = 0u;
+        const uint32_t newCb = getRegU32(ctx, 4);
+        const uint32_t oldCb = s_poffCallback;
+        s_poffCallback = newCb;
+        setReturnU32(ctx, oldCb);
+    }
 }
