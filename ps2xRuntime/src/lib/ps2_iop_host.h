@@ -60,6 +60,7 @@ public:
                       uint32_t function,
                       ps2x::iop::GuestBuffer send,
                       ps2x::iop::GuestBuffer receive) override;
+    void submitAudioPcm(const int16_t *samples, size_t frameCount, uint32_t sampleRate) override;
 
     std::string hostPath(ps2x::iop::HostPathKind kind) const override;
     std::string translateGuestPath(std::string_view path) const override;

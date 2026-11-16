@@ -592,6 +592,11 @@ namespace ps2_stubs
         uint32_t pathAddr = getRegU32(ctx, 5);
         const std::string path = readPs2CStringBounded(rdram, pathAddr, 260);
         const std::string normalizedPath = normalizeCdPathNoPrefix(path);
+        if (std::getenv("PS2_M07_DIAG"))
+        {
+            std::cerr << "[M07_CD_SEARCH] ra=0x" << std::hex << getRegU32(ctx, 31) << std::dec
+                      << " path=\"" << sanitizeForLog(path) << "\"" << std::endl;
+        }
         static uint32_t traceCount = 0;
         const uint32_t callerRa = getRegU32(ctx, 31);
         const bool shouldTrace = (traceCount < 128u) || ((traceCount % 512u) == 0u);

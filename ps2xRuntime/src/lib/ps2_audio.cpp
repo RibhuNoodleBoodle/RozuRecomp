@@ -1,6 +1,8 @@
 #include "runtime/ps2_audio.h"
 #include "runtime/ps2_memory.h"
 #include "ps2_host_backend.h"
+#include <algorithm>
+#include <cmath>
 #include <cstring>
 #include <vector>
 
@@ -77,6 +79,9 @@ struct PS2AudioBackend::Impl
         uint32_t sampleKey;
     };
     std::vector<TrackedSound> activeSounds;
+    AudioStream stream{};
+    bool streamInitialized = false;
+    std::vector<int16_t> streamScratch;
 };
 
 PS2AudioBackend::PS2AudioBackend() : m_impl(std::make_unique<Impl>())
@@ -315,9 +320,16 @@ void PS2AudioBackend::stop(uint32_t voiceId)
 void PS2AudioBackend::stopAll()
 {
     std::lock_guard<std::mutex> lock(m_mutex);
+    m_streamPcmQueue.clear();
 #if defined(PLATFORM_VITA)
     return;
 #else
+    if (m_impl->streamInitialized)
+    {
+        StopAudioStream(m_impl->stream);
+        UnloadAudioStream(m_impl->stream);
+        m_impl->streamInitialized = false;
+    }
     for (auto &t : m_impl->activeSounds)
     {
         StopSound(t.snd);
@@ -325,4 +337,112 @@ void PS2AudioBackend::stopAll()
     }
     m_impl->activeSounds.clear();
 #endif
+}
+
+void PS2AudioBackend::onPcmSamples(const int16_t *samples, size_t frameCount, uint32_t sampleRate)
+{
+    (void)sampleRate;
+    if (!samples || frameCount == 0u)
+        return;
+
+    uint64_t nonZeroInBatch = 0;
+    int32_t batchPeak = 0;
+    double batchSumSq = 0.0;
+    const size_t sampleCount = frameCount * 2u;
+
+    for (size_t f = 0; f < frameCount; ++f)
+    {
+        const int32_t l = samples[f * 2u];
+        const int32_t r = samples[f * 2u + 1u];
+        if (l != 0 || r != 0)
+            ++nonZeroInBatch;
+        const int32_t absL = l < 0 ? -l : l;
+        const int32_t absR = r < 0 ? -r : r;
+        batchPeak = std::max(batchPeak, std::max(absL, absR));
+        const double normL = static_cast<double>(l) / 32768.0;
+        const double normR = static_cast<double>(r) / 32768.0;
+        batchSumSq += (normL * normL) + (normR * normR);
+    }
+
+    std::lock_guard<std::mutex> lock(m_mutex);
+    m_totalFrames += frameCount;
+    m_nonZeroFrames += nonZeroInBatch;
+    m_totalSamples += sampleCount;
+    m_sumSquares += batchSumSq;
+    m_peakAbsSample = std::max(m_peakAbsSample, batchPeak);
+
+    constexpr size_t kMaxQueuedStereoSamples = 48000u; // 0.5 s at 48 kHz stereo
+    m_streamPcmQueue.insert(m_streamPcmQueue.end(), samples, samples + sampleCount);
+    if (m_streamPcmQueue.size() > kMaxQueuedStereoSamples)
+    {
+        const size_t excess = (m_streamPcmQueue.size() - kMaxQueuedStereoSamples) & ~size_t{1u};
+        m_streamPcmQueue.erase(m_streamPcmQueue.begin(),
+                               m_streamPcmQueue.begin() + static_cast<std::ptrdiff_t>(excess));
+    }
+}
+
+void PS2AudioBackend::serviceStream()
+{
+#if defined(PLATFORM_VITA)
+    return;
+#else
+    if (!m_audioReady || !IsAudioDeviceReady())
+        return;
+
+    constexpr int kStreamFrames = 1024;
+    constexpr size_t kStreamSamples = static_cast<size_t>(kStreamFrames) * 2u;
+
+    if (!m_impl->streamInitialized)
+    {
+        SetAudioStreamBufferSizeDefault(kStreamFrames);
+        m_impl->stream = LoadAudioStream(48000, 16, 2);
+        PlayAudioStream(m_impl->stream);
+        m_impl->streamInitialized = true;
+        m_impl->streamScratch.assign(kStreamSamples, 0);
+    }
+
+    int maxUpdates = 4;
+    while (maxUpdates-- > 0 && IsAudioStreamProcessed(m_impl->stream))
+    {
+        size_t copyCount = 0;
+        {
+            std::lock_guard<std::mutex> lock(m_mutex);
+            if (m_streamPcmQueue.empty())
+                break;
+            copyCount = std::min(kStreamSamples, m_streamPcmQueue.size());
+            std::copy_n(m_streamPcmQueue.begin(), copyCount, m_impl->streamScratch.begin());
+            m_streamPcmQueue.erase(m_streamPcmQueue.begin(),
+                                   m_streamPcmQueue.begin() + static_cast<std::ptrdiff_t>(copyCount));
+        }
+        if (copyCount < kStreamSamples)
+            std::fill(m_impl->streamScratch.begin() + static_cast<std::ptrdiff_t>(copyCount),
+                      m_impl->streamScratch.end(),
+                      int16_t{0});
+        UpdateAudioStream(m_impl->stream, m_impl->streamScratch.data(), kStreamFrames);
+    }
+#endif
+}
+
+PS2AudioBackend::AudioStats PS2AudioBackend::audioStats() const
+{
+    std::lock_guard<std::mutex> lock(m_mutex);
+    AudioStats stats;
+    stats.totalFrames = m_totalFrames;
+    stats.nonZeroFrames = m_nonZeroFrames;
+    stats.peakAbsSample = m_peakAbsSample;
+    stats.rms = m_totalSamples > 0u
+                    ? std::sqrt(m_sumSquares / static_cast<double>(m_totalSamples))
+                    : 0.0;
+    return stats;
+}
+
+void PS2AudioBackend::resetStats()
+{
+    std::lock_guard<std::mutex> lock(m_mutex);
+    m_streamPcmQueue.clear();
+    m_totalFrames = 0;
+    m_nonZeroFrames = 0;
+    m_totalSamples = 0;
+    m_sumSquares = 0.0;
+    m_peakAbsSample = 0;
 }

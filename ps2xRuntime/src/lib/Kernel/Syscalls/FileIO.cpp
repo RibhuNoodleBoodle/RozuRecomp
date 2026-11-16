@@ -1,5 +1,8 @@
 #include "Common.h"
 #include "FileIO.h"
+#include "runtime/ee_scheduler.h"
+#include <cstdlib>
+#include <iostream>
 
 namespace ps2_syscalls
 {
@@ -38,6 +41,12 @@ namespace ps2_syscalls
         }
 
         const int32_t descriptor = runtime->vfs().open(ps2Path, static_cast<uint32_t>(flags), currentVfsMounts(), runtime->romDevice());
+        if (std::getenv("PS2_M07_DIAG"))
+        {
+            std::cerr << "[M07_OPEN] tick=" << runtime->eeScheduler().currentVSyncTick()
+                      << " ra=0x" << std::hex << getRegU32(ctx, 31) << std::dec
+                      << " path=\"" << ps2Path << "\" fd=" << descriptor << std::endl;
+        }
         setReturnS32(ctx, descriptor);
     }
 

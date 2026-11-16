@@ -739,6 +739,7 @@ PS2Runtime::~PS2Runtime()
 #else
         if (IsAudioDeviceReady())
         {
+            m_audioBackend.stopAll();
             CloseAudioDevice();
             m_audioBackend.setAudioReady(false);
         }
@@ -2715,6 +2716,7 @@ void PS2Runtime::run()
             m_debugUiDrawCallback(*this, m_debugUiUserData);
         }
         EndDrawing();
+        m_audioBackend.serviceStream();
 
         if (WindowShouldClose())
         {
@@ -2788,6 +2790,7 @@ void PS2Runtime::run()
         const uint32_t lastRa = m_debugRa.load(std::memory_order_relaxed);
         const auto eeSnap = m_eeScheduler ? m_eeScheduler->snapshot() : EeKernelSnapshot{};
         const auto gsSnap = m_gs.getDebugSnapshot();
+        const auto audioSnap = m_audioBackend.audioStats();
         const size_t activeThreads = eeSnap.threads.size();
         std::cout << "[run:summary] vsyncTicks=" << vsyncTicks
                   << " hostFrames=" << hostFrames
@@ -2802,6 +2805,10 @@ void PS2Runtime::run()
                   << " gs=" << gsSnap.hostPresentationWidth << "x" << gsSnap.hostPresentationHeight
                   << " displayFbp=" << gsSnap.hostPresentationDisplayFbp
                   << " latched=" << (gsSnap.hasHostPresentationFrame ? 1 : 0)
+                  << " audioFrames=" << audioSnap.totalFrames
+                  << " audioNonZero=" << audioSnap.nonZeroFrames
+                  << " audioRms=" << audioSnap.rms
+                  << " audioPeak=" << audioSnap.peakAbsSample
                   << " missingFunction=" << (hasMissingFunctionReported() ? 1 : 0)
                   << std::endl;
         for (const auto &t : eeSnap.threads)

@@ -8,6 +8,7 @@
 #include "core/iop_kernel.h"
 #include "imports/iop_loadcore.h"
 #include "core/iop_memory.h"
+#include "core/iop_spu2.h"
 #include "services/iop_module_loader.h"
 #include "services/iop_rpc.h"
 #include "imports/iop_stdio.h"
@@ -110,12 +111,14 @@ namespace ps2x::iop::detail
               imports(memory),
               loadcore(memory, imports)
         {
+            memory.setSpu2(&spu2);
             reset();
         }
 
         void reset()
         {
             memory.reset();
+            spu2.reset();
             kernel.reset();
             modules.clear();
             imports.reset();
@@ -177,7 +180,10 @@ namespace ps2x::iop::detail
         void schedulePendingDma()
         {
             if (const auto dma = memory.takeDmaStart())
+            {
+                spu2.handleDmaTransfer(dma->core, dma->madr, dma->byteCount, dma->chcr, memory);
                 pendingDmaInterrupts[dma->irq] = totalCycles + dma->delayCycles;
+            }
         }
 
         bool readRam(uint32_t address, void *destination, size_t size) const
@@ -572,7 +578,9 @@ namespace ps2x::iop::detail
                         if (!pendingGuestCallbacks.empty())
                             nextWake = std::min(nextWake, pendingGuestCallbacks.begin()->first);
                         nextWake = timrman.nextEventCycle(nextWake);
+                        const uint64_t before = totalCycles;
                         totalCycles = std::max(totalCycles + 1u, std::min(target, nextWake));
+                        spu2.stepCycles(totalCycles - before, host);
                         continue;
                     }
                     const uint64_t before = totalCycles;
@@ -580,6 +588,7 @@ namespace ps2x::iop::detail
                     kernel.endTimeslice(*next, kThreadReturnSentinel);
                     if (totalCycles == before)
                         ++totalCycles;
+                    spu2.stepCycles(totalCycles - before, host);
                 }
             }
             catch (...)
@@ -680,6 +689,7 @@ namespace ps2x::iop::detail
 
         IopHost &host;
         IopMemory memory;
+        IopSpu2 spu2;
         IopSysmem sysmem;
         IopKernel kernel;
         IopCdvd cdvd;

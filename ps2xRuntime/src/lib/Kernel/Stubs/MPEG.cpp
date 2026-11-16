@@ -31,6 +31,7 @@ namespace ps2_stubs
             int height = 0;
             int repeatPict = 0;
             int64_t pts90k = -1;
+            size_t esBytes = 0u;
             std::vector<uint8_t> rgba;
         };
 
@@ -227,6 +228,7 @@ namespace ps2_stubs
                 m_swsFormat = AV_PIX_FMT_NONE;
                 m_initialized = false;
                 m_drained = false;
+                m_pendingPacketBytes = 0u;
             }
 
         private:
@@ -305,6 +307,7 @@ namespace ps2_stubs
                 std::memcpy(m_packet->data, data, size);
                 m_packet->pts = pts;
                 m_packet->dts = dts;
+                m_pendingPacketBytes += size;
 
                 int ret = avcodec_send_packet(m_codecCtx, m_packet);
                 if (ret == AVERROR(EAGAIN))
@@ -410,6 +413,8 @@ namespace ps2_stubs
                 decoded.pts90k = m_frame->best_effort_timestamp != AV_NOPTS_VALUE
                                      ? m_frame->best_effort_timestamp
                                      : -1;
+                decoded.esBytes = m_pendingPacketBytes;
+                m_pendingPacketBytes = 0u;
                 decoded.rgba.resize(static_cast<size_t>(width) * static_cast<size_t>(height) * 4u);
 
                 uint8_t *dstData[4] = {decoded.rgba.data(), nullptr, nullptr, nullptr};
@@ -442,6 +447,7 @@ namespace ps2_stubs
             AVPixelFormat m_swsFormat = AV_PIX_FMT_NONE;
             bool m_initialized = false;
             bool m_drained = false;
+            size_t m_pendingPacketBytes = 0u;
         };
 #else
         // TODO
@@ -482,7 +488,7 @@ namespace ps2_stubs
         // NTSC-style fields at ~59.94 Hz to keep MPEG timing yet (29.97 fps).
         constexpr uint64_t kDefaultPictureIntervalQ32 = 2ull * kPictureClockOne;
         constexpr size_t kMpegTimingScanLimit = 4096u;
-        constexpr size_t kMaxDecodedPicturesAhead = 8u;
+        constexpr size_t kMaxDecodedPicturesAhead = 16u;
 
         struct MpegPlaybackState
         {
@@ -512,6 +518,10 @@ namespace ps2_stubs
             uint64_t presentationEndTickQ32 = std::numeric_limits<uint64_t>::max();
             int64_t firstPresentedPts90k = -1;
             uint64_t ptsPresentationBaseTickQ32 = 0u;
+            uint64_t esBytesConsumed = 0u;
+            uint64_t nodataBytesFed = 0u;
+            uint64_t nodataFallbackBytes = 0u;
+            bool nodataInFlight = false;
         };
 
         struct MpegStreamCallbackEvent
@@ -554,6 +564,7 @@ namespace ps2_stubs
         constexpr uint32_t kMpegStrM2V = 0u;
         constexpr uint32_t kMpegStrPCM = 1u;
         constexpr uint32_t kMpegStrADPCM = 2u;
+        constexpr uint32_t kMpegCbNodata = 1u;
         constexpr uint8_t kMpegPackHeader = 0xBAu;
         constexpr uint8_t kMpegSystemHeader = 0xBBu;
         constexpr uint8_t kMpegProgramEnd = 0xB9u;
@@ -1131,7 +1142,7 @@ namespace ps2_stubs
             }
         }
 
-        std::vector<MpegRegisteredCallback> matchingStreamCallbacks(uint32_t mpegAddr, uint32_t streamType)
+        std::vector<MpegRegisteredCallback> matchingCallbacks(uint32_t mpegAddr, bool stream, uint32_t callbackType)
         {
             std::vector<MpegRegisteredCallback> out;
             auto it = g_mpeg_stub_state.callbacksByMpeg.find(mpegAddr);
@@ -1142,12 +1153,34 @@ namespace ps2_stubs
 
             for (const MpegRegisteredCallback &callback : it->second)
             {
-                if (callback.stream && callback.type == streamType)
+                if (callback.stream == stream && callback.type == callbackType)
                 {
                     out.push_back(callback);
                 }
             }
             return out;
+        }
+
+        std::vector<MpegRegisteredCallback> matchingStreamCallbacks(uint32_t mpegAddr, uint32_t streamType)
+        {
+            return matchingCallbacks(mpegAddr, true, streamType);
+        }
+
+        std::vector<MpegStreamCallbackEvent> collectNonStreamCallbackEvents(uint32_t mpegAddr, uint32_t callbackType)
+        {
+            std::vector<MpegStreamCallbackEvent> events;
+            std::vector<MpegRegisteredCallback> callbacks = matchingCallbacks(mpegAddr, false, callbackType);
+            if (callbacks.empty())
+            {
+                return events;
+            }
+
+            MpegStreamCallbackEvent event{};
+            event.mpegAddr = mpegAddr;
+            event.streamType = callbackType;
+            event.callbacks = std::move(callbacks);
+            events.push_back(std::move(event));
+            return events;
         }
 
         void queueStreamCallbackEvent(uint32_t mpegAddr,
@@ -1579,31 +1612,43 @@ namespace ps2_stubs
             return true;
         }
 
-        void dispatchGuestStreamCallback(uint8_t *rdram,
-                                         R5900Context *callerCtx,
-                                         PS2Runtime *runtime,
-                                         const MpegStreamCallbackEvent &event,
-                                         const MpegRegisteredCallback &callback)
+        struct ChainedMpegCallbacks
         {
-            if (!rdram || !callerCtx || !runtime || callback.func == 0u || !runtime->hasFunction(callback.func))
+            uint8_t *rdram = nullptr;
+            R5900Context callerCtx{};
+            PS2Runtime *runtime = nullptr;
+            uint32_t cbDataAddr = 0u;
+            std::vector<std::pair<MpegStreamCallbackEvent, MpegRegisteredCallback>> items;
+        };
+
+        void queueNextChainedCallback(const std::shared_ptr<ChainedMpegCallbacks> &state, size_t idx)
+        {
+            if (!state || !state->runtime || !state->rdram || idx >= state->items.size())
             {
+                if (state && state->runtime && state->cbDataAddr != 0u)
+                {
+                    state->runtime->guestFree(state->cbDataAddr);
+                    state->cbDataAddr = 0u;
+                }
                 return;
             }
 
-            const uint32_t cbDataAddr = runtime->guestMalloc(kMpegCallbackDataSize, 16u);
-            if (cbDataAddr == 0u)
+            const MpegStreamCallbackEvent &event = state->items[idx].first;
+            const MpegRegisteredCallback &callback = state->items[idx].second;
+            if (!writeMpegCallbackData(state->rdram, state->cbDataAddr, event))
             {
-                return;
-            }
-            if (!writeMpegCallbackData(rdram, cbDataAddr, event))
-            {
-                runtime->guestFree(cbDataAddr);
+                if (std::getenv("PS2_M07_DIAG"))
+                {
+                    std::cerr << "[M07_CB_SKIP3] write=false addr=0x" << std::hex << state->cbDataAddr << std::dec << std::endl;
+                }
+                state->runtime->guestFree(state->cbDataAddr);
+                state->cbDataAddr = 0u;
                 return;
             }
 
-            R5900Context callbackCtx = *callerCtx;
+            R5900Context callbackCtx = state->callerCtx;
             SET_GPR_U32(&callbackCtx, 4, event.mpegAddr);
-            SET_GPR_U32(&callbackCtx, 5, cbDataAddr);
+            SET_GPR_U32(&callbackCtx, 5, state->cbDataAddr);
             SET_GPR_U32(&callbackCtx, 6, callback.data);
             SET_GPR_U32(&callbackCtx, 7, 0u);
             SET_GPR_U32(&callbackCtx, 29, 0u);
@@ -1613,11 +1658,42 @@ namespace ps2_stubs
             GuestInvocation invocation{};
             invocation.kind = GuestInvocationKind::RpcCallback;
             invocation.context = callbackCtx;
-            invocation.onComplete = [runtime, cbDataAddr](const R5900Context &, R5900Context &)
+            const uint64_t diagTick = state->runtime->eeScheduler().currentVSyncTick();
+            const uint32_t diagFunc = callback.func;
+            const uint32_t diagLen = event.len;
+            const uint32_t diagDataAddr = event.dataAddr;
+            if (std::getenv("PS2_M07_DIAG") && diagTick >= 920 && diagTick <= 924)
             {
-                runtime->guestFree(cbDataAddr);
+                std::cerr << "[M07_CB_Q] tick=" << diagTick
+                          << " idx=" << idx
+                          << " type=" << event.streamType
+                          << " func=0x" << std::hex << diagFunc
+                          << " data=0x" << diagDataAddr << std::dec
+                          << " len=" << diagLen << std::endl;
+            }
+            invocation.onComplete = [state, idx, diagTick, diagFunc, diagLen, diagDataAddr](const R5900Context &doneCtx, R5900Context &)
+            {
+                if (std::getenv("PS2_M07_DIAG") && diagTick >= 920 && diagTick <= 926)
+                {
+                    std::cerr << "[M07_CB_DONE] tick=" << state->runtime->eeScheduler().currentVSyncTick()
+                              << " qtick=" << diagTick
+                              << " idx=" << idx
+                              << " func=0x" << std::hex << diagFunc
+                              << " data=0x" << diagDataAddr << std::dec
+                              << " len=" << diagLen
+                              << " ret=" << static_cast<int32_t>(getRegU32(&doneCtx, 2)) << std::endl;
+                }
+                if (idx + 1u < state->items.size())
+                {
+                    queueNextChainedCallback(state, idx + 1u);
+                }
+                else
+                {
+                    state->runtime->guestFree(state->cbDataAddr);
+                    state->cbDataAddr = 0u;
+                }
             };
-            runtime->eeScheduler().queueInvocation(std::move(invocation));
+            state->runtime->eeScheduler().queueInvocation(std::move(invocation));
         }
 
         void dispatchStreamCallbacks(uint8_t *rdram,
@@ -1625,18 +1701,58 @@ namespace ps2_stubs
                                      PS2Runtime *runtime,
                                      const std::vector<MpegStreamCallbackEvent> &events)
         {
-            if (events.empty())
+            if (!rdram || !ctx || !runtime || events.empty())
             {
                 return;
             }
 
-            for (const MpegStreamCallbackEvent &event : events)
+            auto state = std::make_shared<ChainedMpegCallbacks>();
+            state->rdram = rdram;
+            state->callerCtx = *ctx;
+            state->runtime = runtime;
+
+            for (size_t idx = 0; idx < events.size(); ++idx)
             {
+                const MpegStreamCallbackEvent &event = events[idx];
+                if (std::getenv("PS2_M07_DIAG") && runtime->eeScheduler().currentVSyncTick() >= 920 && runtime->eeScheduler().currentVSyncTick() <= 924)
+                {
+                    std::cerr << "[M07_EV] idx=" << idx
+                              << " type=" << event.streamType
+                              << " data=0x" << std::hex << event.dataAddr << std::dec
+                              << " len=" << event.len
+                              << " cbs=" << event.callbacks.size() << std::endl;
+                }
                 for (const MpegRegisteredCallback &callback : event.callbacks)
                 {
-                    dispatchGuestStreamCallback(rdram, ctx, runtime, event, callback);
+                    if (callback.func == 0u || !runtime->hasFunction(callback.func))
+                    {
+                        if (std::getenv("PS2_M07_DIAG"))
+                        {
+                            std::cerr << "[M07_CB_SKIP1] func=0x" << std::hex << callback.func
+                                      << " has=" << runtime->hasFunction(callback.func) << std::dec << std::endl;
+                        }
+                        continue;
+                    }
+                    state->items.emplace_back(event, callback);
                 }
             }
+
+            if (state->items.empty())
+            {
+                return;
+            }
+
+            state->cbDataAddr = runtime->guestMalloc(kMpegCallbackDataSize, 16u);
+            if (state->cbDataAddr == 0u)
+            {
+                if (std::getenv("PS2_M07_DIAG"))
+                {
+                    std::cerr << "[M07_CB_SKIP2] malloc=0" << std::endl;
+                }
+                return;
+            }
+
+            queueNextChainedCallback(state, 0u);
         }
 
         void dispatchStreamCallbacksUnlocked(uint8_t *rdram,
@@ -2067,6 +2183,12 @@ namespace ps2_stubs
         (void)rdram;
 
         const uint32_t mpegAddr = getRegU32(ctx, 4);
+        if (std::getenv("PS2_M07_DIAG"))
+        {
+            std::cerr << "[M07_MPEG_DEL] tick=" << runtime->eeScheduler().currentVSyncTick()
+                      << " ra=0x" << std::hex << getRegU32(ctx, 31)
+                      << " mpeg=0x" << mpegAddr << std::dec << std::endl;
+        }
         {
             std::lock_guard<std::mutex> lock(g_mpeg_stub_mutex);
             g_mpeg_stub_state.callbacksByMpeg.erase(mpegAddr);
@@ -2195,6 +2317,34 @@ namespace ps2_stubs
             traceIdx = g_mpeg_stub_state.demuxRingTraceCount++;
         }
 
+        if (std::getenv("PS2_M07_DIAG"))
+        {
+            uint32_t ringPtr = 0;
+            uint32_t ringUsed = 0;
+            uint32_t ringCap = 0;
+            if (const uint8_t *rp = getConstMemPtr(rdram, 0x298F2Cu))
+            {
+                ringPtr = *reinterpret_cast<const uint32_t *>(rp);
+                if (const uint8_t *r = getConstMemPtr(rdram, ringPtr))
+                {
+                    ringUsed = *reinterpret_cast<const uint32_t *>(r + 8u);
+                    ringCap = *reinterpret_cast<const uint32_t *>(r + 16u);
+                }
+            }
+            const uint64_t tick = runtime->eeScheduler().currentVSyncTick();
+            if (tick >= 918 && tick <= 1030)
+            {
+                std::cerr << "[M07_DEMUX] tick=" << tick
+                          << " bp=" << (backpressured ? 1 : 0)
+                          << " avail=" << availableBytes
+                          << " cons=" << consumed
+                          << " q=" << decodedBefore << "->" << decodedCount
+                          << " cbs=" << callbackEvents.size()
+                          << " ringUsed=0x" << std::hex << ringUsed
+                          << "/0x" << ringCap << std::dec << std::endl;
+            }
+        }
+
         if (backpressured)
         {
             if (traceIdx < 32u)
@@ -2288,7 +2438,9 @@ namespace ps2_stubs
         uint32_t height = kStubMovieHeight;
         uint32_t frameCount = 0u;
         bool haveFrame = false;
+        bool streamFinishedNoFrame = false;
         MpegDecodedFrame frame;
+        std::vector<MpegStreamCallbackEvent> nodataCallbackEvents;
         {
             std::unique_lock<std::mutex> lock(g_mpeg_stub_mutex);
             MpegPlaybackState &playback = getPlaybackState(mpegAddr);
@@ -2366,6 +2518,7 @@ namespace ps2_stubs
                 height = playback.height;
                 frameCount = playback.picturesServed;
                 playback.picturesServed += 1u;
+                playback.esBytesConsumed += frame.esBytes;
                 playback.nextPictureTickQ32 = presentationTargetQ32 + frameIntervalQ32;
                 playback.presentationEndTickQ32 = playback.nextPictureTickQ32;
                 haveFrame = true;
@@ -2386,12 +2539,71 @@ namespace ps2_stubs
                 width = playback.width;
                 height = playback.height;
                 frameCount = playback.picturesServed;
+                streamFinishedNoFrame =
+                    playback.streamEnded ||
+                    playback.decoderFailed ||
+                    (playback.picturesServed > 0u && g_mpeg_stub_state.currentCdStreamEofSeen);
+            }
+
+            if (playback.nodataInFlight)
+            {
+                const uint32_t d4Qwc = runtime ? runtime->memory().readIORegister(0x1000B420u) : 0u;
+                const uint64_t fedBytes = d4Qwc != 0u
+                                              ? static_cast<uint64_t>(d4Qwc) * 16ull
+                                              : playback.nodataFallbackBytes;
+                playback.nodataBytesFed += fedBytes;
+                playback.nodataFallbackBytes = 0u;
+                playback.nodataInFlight = false;
+            }
+
+            const bool needMoreIpuData =
+                haveFrame && (playback.esBytesConsumed >= playback.nodataBytesFed);
+            if (needMoreIpuData || streamFinishedNoFrame)
+            {
+                nodataCallbackEvents = collectNonStreamCallbackEvents(mpegAddr, kMpegCbNodata);
+                if (haveFrame && !nodataCallbackEvents.empty())
+                {
+                    playback.nodataInFlight = true;
+                    playback.nodataFallbackBytes = frame.esBytes;
+                }
+            }
+            if (std::getenv("PS2_M07_DIAG"))
+            {
+                const uint32_t *p08 = reinterpret_cast<const uint32_t *>(getMemPtr(rdram, 0x298F08u));
+                const uint32_t *p2c = reinterpret_cast<const uint32_t *>(getMemPtr(rdram, 0x298F2Cu));
+                const uint32_t *ring = p2c ? reinterpret_cast<const uint32_t *>(getMemPtr(rdram, *p2c)) : nullptr;
+                const uint32_t d4 = runtime ? runtime->memory().readIORegister(0x1000B420u) : 0u;
+                std::cerr << "[M07_MPEG] tick=" << runtime->eeScheduler().currentVSyncTick()
+                          << " f=" << frameCount << " q=" << playback.decodedFrames.size()
+                          << " fEs=" << (haveFrame ? frame.esBytes : 0u)
+                          << " esC=" << playback.esBytesConsumed
+                          << " nf=" << playback.nodataBytesFed
+                          << " nd=" << nodataCallbackEvents.size()
+                          << " d4q=0x" << std::hex << d4
+                          << " ring=0x" << (ring ? ring[2] : 0u)
+                          << " rem=0x" << (p08 ? *p08 : 0u)
+                          << std::dec << std::endl;
             }
         }
 
         mpegGuestWrite32(rdram, mpegAddr + 0x00u, width);
         mpegGuestWrite32(rdram, mpegAddr + 0x04u, height);
         mpegGuestWrite32(rdram, mpegAddr + 0x08u, frameCount);
+
+        if (streamFinishedNoFrame)
+        {
+            if (uint8_t *base = getMemPtr(rdram, mpegAddr))
+            {
+                const uint32_t iVar1 = *reinterpret_cast<uint32_t *>(base + 0x40);
+                if (uint8_t *inner = getMemPtr(rdram, iVar1))
+                {
+                    *reinterpret_cast<uint32_t *>(inner + 0xb0) = 0;
+                }
+            }
+            dispatchStreamCallbacksUnlocked(rdram, ctx, runtime, nodataCallbackEvents);
+            setReturnS32(ctx, -1);
+            return;
+        }
 
         if (uint8_t *base = getMemPtr(rdram, mpegAddr))
         {
@@ -2415,6 +2627,7 @@ namespace ps2_stubs
             writeBlankMpegFrame(rdram, imageAddr, width, height);
         }
 
+        dispatchStreamCallbacksUnlocked(rdram, ctx, runtime, nodataCallbackEvents);
         setReturnS32(ctx, 0);
     }
 
@@ -2503,6 +2716,12 @@ namespace ps2_stubs
     {
         (void)runtime;
         const uint32_t param_1 = getRegU32(ctx, 4);
+        if (std::getenv("PS2_M07_DIAG"))
+        {
+            std::cerr << "[M07_MPEG_RST] tick=" << runtime->eeScheduler().currentVSyncTick()
+                      << " ra=0x" << std::hex << getRegU32(ctx, 31)
+                      << " mp=0x" << param_1 << std::dec << std::endl;
+        }
         {
             std::lock_guard<std::mutex> lock(g_mpeg_stub_mutex);
             MpegPlaybackState &playback = getPlaybackState(param_1);

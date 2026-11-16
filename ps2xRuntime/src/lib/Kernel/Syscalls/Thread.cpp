@@ -1,6 +1,8 @@
 #include "Common.h"
 #include "Thread.h"
 #include "runtime/ee_scheduler.h"
+#include <cstdlib>
+#include <iostream>
 
 namespace ps2_syscalls
 {
@@ -312,8 +314,17 @@ namespace ps2_syscalls
     void TerminateThread(uint8_t *rdram, R5900Context *ctx, PS2Runtime *runtime)
     {
         EeScheduler &ee = scheduler(rdram, ctx, runtime);
+        const int tid = static_cast<int>(getRegU32(ctx, 4));
+        if (std::getenv("PS2_M07_DIAG"))
+        {
+            std::cerr << "[M07_TERM] tick=" << ee.currentVSyncTick()
+                      << " tid=" << tid
+                      << " caller=" << ee.currentThreadId()
+                      << " ra=0x" << std::hex << getRegU32(ctx, 31)
+                      << " sp=0x" << getRegU32(ctx, 29) << std::dec << std::endl;
+        }
         uint32_t ownedStack = 0;
-        const int result = ee.terminateThread(static_cast<int>(getRegU32(ctx, 4)), ownedStack, false);
+        const int result = ee.terminateThread(tid, ownedStack, false);
         if (ownedStack != 0u)
         {
             runtime->guestFree(ownedStack);
@@ -324,7 +335,8 @@ namespace ps2_syscalls
     void SuspendThread(uint8_t *rdram, R5900Context *ctx, PS2Runtime *runtime)
     {
         EeScheduler &ee = scheduler(rdram, ctx, runtime);
-        const int result = ee.suspendThread(static_cast<int>(getRegU32(ctx, 4)), false);
+        const int tid = static_cast<int>(getRegU32(ctx, 4));
+        const int result = ee.suspendThread(tid, false);
         setReturnS32(ctx, result);
         ee.transferIfRequested(false);
     }
@@ -332,7 +344,40 @@ namespace ps2_syscalls
     void ResumeThread(uint8_t *rdram, R5900Context *ctx, PS2Runtime *runtime)
     {
         EeScheduler &ee = scheduler(rdram, ctx, runtime);
-        const int result = ee.resumeThread(static_cast<int>(getRegU32(ctx, 4)), false);
+        const int tid = static_cast<int>(getRegU32(ctx, 4));
+        if (std::getenv("PS2_M07_DIAG") && tid == 3)
+        {
+            const uint64_t tick = ee.currentVSyncTick();
+            if ((tick >= 918 && tick <= 1024 && (tick % 2 == 0)) || (tick % 200 == 0))
+            {
+                auto rd32 = [&](uint32_t addr) -> uint32_t {
+                    const uint8_t *p = getConstMemPtr(rdram, addr);
+                    return p ? *reinterpret_cast<const uint32_t *>(p) : 0xDEADDEADu;
+                };
+                const GuestThread *t3 = ee.thread(3);
+                const uint32_t t3a0 = t3 ? getRegU32(&t3->context, 4) : 0u;
+                const uint32_t t3s0 = t3 ? getRegU32(&t3->context, 16) : 0u;
+                std::cerr << "[M07_T3] tick=" << tick
+                          << " t3pc=0x" << std::hex << (t3 ? t3->context.pc : 0u)
+                          << " t3ra=0x" << (t3 ? getRegU32(&t3->context, 31) : 0u)
+                          << " a0=0x" << t3a0
+                          << " *(a0+8)=" << rd32(t3a0 + 8u)
+                          << " s0=0x" << t3s0
+                          << " 6E9200=" << rd32(0x6E9200u)
+                          << " 6E9204=" << rd32(0x6E9204u)
+                          << " 6E9208=" << rd32(0x6E9208u)
+                          << " 6E920C=" << rd32(0x6E920Cu)
+                          << " 6E9210=" << rd32(0x6E9210u)
+                          << " 7B40C0=" << rd32(0x7B40C0u)
+                          << " 7B40C4=" << rd32(0x7B40C4u)
+                          << " 7B40D0=" << rd32(0x7B40D0u)
+                          << " 298F14=" << rd32(0x298F14u)
+                          << " 298F30=" << rd32(0x298F30u)
+                          << " 298F48=" << rd32(0x298F48u)
+                          << std::dec << std::endl;
+            }
+        }
+        const int result = ee.resumeThread(tid, false);
         setReturnS32(ctx, result);
         ee.transferIfRequested(false);
     }

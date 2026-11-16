@@ -4,6 +4,7 @@
 #include "ps2recomp/r5900_decoder.h"
 #include "ps2recomp/types.h"
 #include "ps2_runtime.h"
+#include "runtime/ps2_audio.h"
 #include "runtime/ps2_memory.h"
 #include "ps2_syscalls.h"
 #include "ps2_stubs.h"
@@ -18,6 +19,7 @@
 #include "Stubs/VU.h"
 
 #include <atomic>
+#include <cmath>
 #include <cstdint>
 #include <cstring>
 #include <exception>
@@ -1575,6 +1577,91 @@ void register_ps2_runtime_expansion_tests()
             uint32_t directCmd = 0u;
             std::memcpy(&directCmd, rdram.data() + kBaseAddr + 12u, sizeof(directCmd));
             t.Equals(directCmd, 0x50000001u, "sceVif1PkCloseDirectCode should store a 1-QW DIRECT length");
+        });
+
+        tc.Run("PS2AudioBackend onPcmSamples tracks RMS, peak, and non-zero frames", [](TestCase &t)
+        {
+            PS2AudioBackend backend;
+            std::vector<int16_t> stereo(512u * 2u, 0);
+            for (size_t i = 0; i < 512u; ++i)
+            {
+                const int16_t val = static_cast<int16_t>(std::lround(8000.0 * std::sin(static_cast<double>(i) * 0.2)));
+                stereo[i * 2u] = val;
+                stereo[i * 2u + 1u] = static_cast<int16_t>(-val);
+            }
+
+            backend.onPcmSamples(stereo.data(), 512u, 48000u);
+            const PS2AudioBackend::AudioStats stats = backend.audioStats();
+            t.Equals(stats.totalFrames, static_cast<uint64_t>(512u), "audioStats should count total frames");
+            t.IsTrue(stats.nonZeroFrames >= 450u, "audioStats should count non-zero stereo frames");
+            t.IsTrue(stats.peakAbsSample > 100, "audioStats peak sample should reflect wave amplitude");
+            t.IsTrue(stats.rms > 0.001, "audioStats RMS should exceed silence threshold");
+
+            backend.resetStats();
+            const PS2AudioBackend::AudioStats reset = backend.audioStats();
+            t.Equals(reset.totalFrames, static_cast<uint64_t>(0u), "resetStats should clear frame count");
+            t.Equals(reset.peakAbsSample, 0, "resetStats should clear peak sample");
+        });
+
+        tc.Run("sceMpegCreate and sceMpegDelete manage playback state cleanly", [](TestCase &t)
+        {
+            PS2Runtime runtime;
+            t.IsTrue(runtime.memory().initialize(), "PS2Memory should initialize");
+            uint8_t *rdram = runtime.memory().getRDRAM();
+            R5900Context ctx{};
+
+            constexpr uint32_t kMpegAddr = 0x00180000u;
+            constexpr uint32_t kDataAddr = 0x00180200u;
+            setRegU32(ctx, 4, kMpegAddr);
+            setRegU32(ctx, 5, kDataAddr);
+            setRegU32(ctx, 6, 4096u);
+            setRegU32(ctx, 7, 0u);
+            setRegU32(ctx, 8, 0u);
+            setRegU32(ctx, 9, 0u);
+            ps2_stubs::sceMpegCreate(rdram, &ctx, &runtime);
+            t.IsTrue(::getRegU32(&ctx, 2) != 0u, "sceMpegCreate should return a non-zero MPEG internal pointer");
+
+            std::memset(&ctx, 0, sizeof(ctx));
+            setRegU32(ctx, 4, kMpegAddr);
+            ps2_stubs::sceMpegIsEnd(rdram, &ctx, &runtime);
+            t.Equals(::getRegU32(&ctx, 2), 0u, "newly created mpeg handle should not report EOF");
+
+            std::memset(&ctx, 0, sizeof(ctx));
+            setRegU32(ctx, 4, kMpegAddr);
+            ps2_stubs::sceMpegDelete(rdram, &ctx, &runtime);
+            t.Equals(::getRegU32(&ctx, 2), 0u, "sceMpegDelete should succeed");
+        });
+
+        tc.Run("sceMpegGetPicture signals EOF negatively after draining served frames", [](TestCase &t)
+        {
+            PS2Runtime runtime;
+            std::vector<uint8_t> rdramBuf(PS2_RAM_SIZE, 0u);
+            uint8_t *rdram = rdramBuf.data();
+            ps2_stubs::resetMpegStubState();
+            ps2_stubs::notifyMpegCdStreamStart();
+
+            constexpr uint32_t kMpegAddr = 0x00126000u;
+            constexpr uint32_t kInnerAddr = 0x00127000u;
+            constexpr uint32_t kImageAddr = 0x00140000u;
+            Ps2FastWrite32(rdram, kMpegAddr + 0x40u, kInnerAddr);
+            ps2_stubs::enqueueMpegDecodedFrameForTesting(kMpegAddr);
+
+            R5900Context ctx{};
+            setRegU32(ctx, 4, kMpegAddr);
+            setRegU32(ctx, 5, kImageAddr);
+            ps2_stubs::sceMpegGetPicture(rdram, &ctx, &runtime);
+            t.Equals(getRegS32(ctx, 2), 0, "first picture fetch with queued frame should succeed");
+            t.Equals(Ps2FastRead32(rdram, kInnerAddr + 0xB0u), 1u, "decoded picture should mark inner + 0xB0 ready");
+            t.Equals(Ps2FastRead32(rdram, kMpegAddr + 0x08u), 0u, "first served picture writes 0-based frame index 0");
+
+            ps2_stubs::notifyMpegCdStreamEof(&runtime);
+            std::memset(&ctx, 0, sizeof(ctx));
+            setRegU32(ctx, 4, kMpegAddr);
+            setRegU32(ctx, 5, kImageAddr);
+            ps2_stubs::sceMpegGetPicture(rdram, &ctx, &runtime);
+            t.IsTrue(getRegS32(ctx, 2) < 0, "EOF after served frames should return negative status so loops terminate");
+            t.Equals(Ps2FastRead32(rdram, kInnerAddr + 0xB0u), 0u, "EOF without picture should clear inner + 0xB0");
+            t.Equals(Ps2FastRead32(rdram, kMpegAddr + 0x08u), 1u, "EOF without picture should not increment frame count");
         });
     });
 }

@@ -10,6 +10,8 @@
 
 namespace ps2x::iop::detail
 {
+    class IopSpu2;
+
     class IopMemory
     {
     public:
@@ -35,6 +37,10 @@ namespace ps2x::iop::detail
         {
             int irq = 0;
             uint64_t delayCycles = 0;
+            uint32_t core = 0;
+            uint32_t madr = 0;
+            uint32_t byteCount = 0;
+            uint32_t chcr = 0;
         };
 
         IopMemory();
@@ -69,10 +75,13 @@ namespace ps2x::iop::detail
 
         [[nodiscard]] std::optional<DmaStart> takeDmaStart() noexcept;
         [[nodiscard]] std::span<const uint8_t> ram() const noexcept { return m_ram; }
+        void setSpu2(IopSpu2 *spu2) noexcept { m_spu2 = spu2; }
 
         [[nodiscard]] static uint32_t physicalAddress(uint32_t address) noexcept;
 
     private:
+        [[nodiscard]] uint16_t readHardware16(uint32_t address) const;
+        void writeHardware16(uint32_t address, uint16_t value);
         [[nodiscard]] uint32_t readHardware32(uint32_t address) const;
         void writeHardware32(uint32_t address, uint32_t value);
         void markOwned(uint32_t address, size_t size);
@@ -87,5 +96,6 @@ namespace ps2x::iop::detail
         uint32_t m_interruptMask = 0;
         uint32_t m_interruptControl = 1;
         std::optional<DmaStart> m_dmaStart;
+        IopSpu2 *m_spu2 = nullptr;
     };
 }
