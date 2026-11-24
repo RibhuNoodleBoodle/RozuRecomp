@@ -78,6 +78,26 @@ if(NOT EXISTS "${ROZU_GENERATED_DIR}/register_functions.cpp" OR NOT EXISTS "${RO
     return()
 endif()
 
+add_executable(rozu_poc_test
+    tests/rozu_poc_test.cpp
+    tests/test_function_table_stub.cpp
+    "${ROZU_GENERATED_DIR}/fn_00280fd4_setId_8DogActori_0x280fd4.cpp"
+    "${ROZU_GENERATED_DIR}/fn_00280fdc_getId_C8DogActor_0x280fdc.cpp"
+    "${ROZU_GENERATED_DIR}/fn_00281020_setMotionSpeed_8DogActorf_0x281020.cpp"
+    "${ROZU_GENERATED_DIR}/fn_00281028_getMotionSpeed_C8DogActor_0x281028.cpp"
+    "${ROZU_GENERATED_DIR}/fn_0028126c_setBaseRotate_8DogActorfff_0x28126c.cpp"
+    "${ROZU_GENERATED_DIR}/sub_00103390_0x103390.cpp"
+    "${ROZU_GENERATED_DIR}/sub_001041c4_0x1041c4.cpp"
+)
+target_include_directories(rozu_poc_test PRIVATE src "${ROZU_GENERATED_DIR}")
+target_link_libraries(rozu_poc_test PRIVATE rozu_host_lib ps2_runtime)
+if(MSVC)
+    target_compile_options(rozu_poc_test PRIVATE /fp:precise /arch:AVX2 /W3 /utf-8)
+elseif(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+    target_compile_options(rozu_poc_test PRIVATE -fno-fast-math -ffp-contract=off -fno-associative-math -Wall -Wextra)
+endif()
+add_test(NAME rozu_poc_test COMMAND rozu_poc_test)
+
 file(GLOB ROZU_GENERATED_SOURCES CONFIGURE_DEPENDS "${ROZU_GENERATED_DIR}/*.cpp")
 
 set(ROZU_GAME_CODE_LIBRARY "" CACHE FILEPATH "Reuse an unchanged generated EE library for host-only builds")
