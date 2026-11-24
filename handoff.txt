@@ -60,21 +60,21 @@ HANDOFF.TXT — RULE OF ROSE (PS2) NATIVE PC STATIC RECOMPILATION
 
 4. BRANCH, HEAD SHA, WORKTREE STATUS, UNCOMMITTED CHANGES
 ---------------------------------------------------------
-- Branch: `rozu/port-bringup` (M01 commit `02ac14bc32e4fc0ade8d0265e1185c7bddddf411`)
-- Worktree status: M02 profile, ISO validator, and `game_disc` files staged and
-  committed on `rozu/port-bringup`. Only user's untracked
-  `Google_Neon_Rule_of_Rose_Recomp_Architect.txt` remains untracked.
+- Branch: `rozu/port-bringup` (M02 commit `3ab9347ccd23bfe1152f1eb8ff6b99b14b22a338`)
+- Worktree status: M03 function discovery, annotated ELF builder, SDK stub audit,
+  and `Port/recomp/rozu.toml` ready for M03 commit on `rozu/port-bringup`.
+  Only user's untracked `Google_Neon_Rule_of_Rose_Recomp_Architect.txt` remains untracked.
 - Ownership: Hydrogen owns all implementation/build/test/commit steps from M00 onward.
 
 5. CURRENT PHASE + ACTIVE STEP ID + % STATUS (ESTIMATE)
 -------------------------------------------------------
-- Current Phase: M02 (Gate G1a) COMPLETE -> Ready for M03 (Gate G1b)
-- Active Step ID: Completed `gemini_hydrogen/Gemini_Step_003.txt` (M02 / Gate G1a);
-  next is `gemini_hydrogen/Gemini_Step_004.txt` (M03 / Gate G1b).
+- Current Phase: M03 (Gate G1b) COMPLETE -> Ready for M04 (Gate G2)
+- Active Step ID: Completed `gemini_hydrogen/Gemini_Step_004.txt` (M03 / Gate G1b);
+  next is `gemini_hydrogen/Gemini_Step_005.txt` (M04 / Gate G2).
 - Architecture / Planning Status: 100% COMPLETE (estimate)
 - Implementation / Build / Boot / Playable Status:
   - Planned: M00–M12 (M03–M05 READY; M06–M12 CONDITIONAL)
-  - Implemented: ~24% (M00–M02 complete: SLUS-21448 profile, ISO validator, `game_disc`)
+  - Implemented: ~32% (M00–M03 complete: full function discovery + SDK stub audit + `rozu.toml`)
   - Built: `rozu_host_lib`, `rozu_host_unit_test`, `rozu_disc_test`, PS2Recomp tools/tests
   - Booted: NOT YET
   - Playable: NOT YET
@@ -84,14 +84,11 @@ HANDOFF.TXT — RULE OF ROSE (PS2) NATIVE PC STATIC RECOMPILATION
 - Neon Phase A–D COMPLETE: `architecture/*`, `gemini_hydrogen/*`, `handoff.txt`.
 - Hydrogen M00 (Gate G0a) COMPLETE on `rozu/port-bringup` (`dba95aec6650c5d22f5909e2efd7b98239528372`).
 - Hydrogen M01 (Gate G0b) COMPLETE on `rozu/port-bringup` (`02ac14bc32e4fc0ade8d0265e1185c7bddddf411`).
-- Hydrogen M02 (Gate G1a) COMPLETE on `rozu/port-bringup`:
-  - Created `Port/profile/SLUS-21448_v1.00.json` (verified disc, `SLUS_214.48`, `.vutext` exclusion, and 12 required files = 13 disc file hashes).
-  - Created `Tools/ror_prepare.py` (Phase 1 ISO9660/PVD/SHA-256 validator, ELF32 MIPS `ET_EXEC` / `0` relocations / `.vutext` structural assertions, and `rozu_layout_generated.h` emitter).
-  - Created `Port/src/rozu/game_disc.{h,cpp}` & `Port/tests/rozu_disc_test.cpp`; wired CMake profile-header fallback in `Port/CMakeLists.txt`.
-  - `ror_prepare.py --validate-only` & `--verify-full-disc-sha256` on `Game/Rule of Rose (USA).iso`: exit `0` (`13/13` SHA-256 checks + full 3,393,454,080 B disc SHA-256 verified, `entry=0x00100008`, `sections=1795`, `relocs=0`, `.vutext=0x00291230+0x4180`); logs `build/test_artifacts/G1a/prepare_valid.log`, `prepare_full_hash.log`.
-  - Negative test on 64 KB `fake.iso`: exit `3` (`NEG_EXIT=3`) naming `SLUS-21448 v1.00` and expected vs actual size/SHA-256 (`build/test_artifacts/G1a/prepare_negative.log`).
-  - `rozu_disc_test` on valid + fake ISO: exit `0`, all 7 checks PASS (`build/test_artifacts/G1a/disc_test.log`), nested `MODULES/PAD2/DS1O_D.IRX` verified via `PS2CdImage`.
-  - `ctest --test-dir build/linux --output-on-failure`: 53/53 PASS (`build/test_artifacts/G1a/ctest.log`).
+- Hydrogen M02 (Gate G1a) COMPLETE on `rozu/port-bringup` (`3ab9347ccd23bfe1152f1eb8ff6b99b14b22a338`).
+- Hydrogen M03 (Gate G1b) COMPLETE on `rozu/port-bringup`:
+  - Extended `Tools/ror_prepare.py` with Phase 2: `ps2_analyzer` invocation (`build/prepare/analyzer/analyzed.toml`), branch-span-safe multi-source deterministic function discovery (`.text` + 1,449 `.gnu.linkonce.t.*` + 284 `.gnu.linkonce.d.*` vtables / 1,454 slots + 4,025 `jal` targets + `.ctors`/`.dtors` + `.rodata`/`.data` non-switch pointers), annotated ELF emitter (`build/prepare/slus_21448_annotated.elf` with `.symtab`/`.strtab` and `.vutext` `SHF_EXECINSTR` cleared -> `SHF_ALLOC` `0x2`), `rozu_functions.csv`, `Analysis/ADDRESS_MAP.generated.csv`, and `--verify-output` verifier.
+  - Verified `9,016` functions (`0` overlaps, `0` gaps, `0` in `.vutext` `0x00291230..0x002953B0`, `4,025/4,025` `jal` targets covered, `1,454/1,454` vtable slots covered, `1,449/1,449` `.gnu.linkonce.t.*` covered, `0x00100008` present); logs `build/test_artifacts/G1b/{prepare,readelf_sec,verify_output}.log`.
+  - Audited `ps2_analyzer` stubs vs `SLUS_214.48` and `ps2_call_list.h` in `Docs/SDK_STUB_AUDIT.md`, rejected `0x00236AC8..0x00237788` `sceVu0*` false positives, and created `Port/recomp/rozu.toml` (`124/124` stubs verified in `rozu_functions.csv` & `ps2_call_list.h`).
 
 7. VERY SMALL PROGRESS LOG (TIMESTAMPED, APPEND-ONLY)
 -----------------------------------------------------
@@ -132,15 +129,20 @@ HANDOFF.TXT — RULE OF ROSE (PS2) NATIVE PC STATIC RECOMPILATION
   - Created `Port/profile/SLUS-21448_v1.00.json`, `Tools/ror_prepare.py` (Phase 1 validator + ELF structural check + `rozu_layout_generated.h` emitter), `Port/src/rozu/game_disc.{h,cpp}`, and `Port/tests/rozu_disc_test.cpp`; updated `Port/CMakeLists.txt` and `.gitignore` (`__pycache__/`, `*.pyc`).
   - Audited `PS2CdImage` (`ps2_cd_image.cpp`): `normalizeKey` strips `device:` prefix (`<8` chars) and `;1` suffix, converts `\` -> `/`, and uppercases paths, resolving `MODULES/PAD2/DS1O_D.IRX` directly.
   - Verified `ror_prepare.py` on `Game/Rule of Rose (USA).iso` (both fast 13/13 file SHA-256 + `--verify-full-disc-sha256`), negative rejection on 64 KB `fake.iso` (`NEG_EXIT=3`), `rozu_disc_test` (positive & negative PASS), and `ctest` (53/53 PASS).
+- [2026-11-24 09:08 +0530] Executed M03 (Gate G1b, Gemini Hydrogen):
+  - Extended `Tools/ror_prepare.py` with Phase 2 (`--analyzer`, `--address-map`, `--verify-output`), discovering `9,016` unique functions (`0` gaps/overlaps, `0` in `.vutext`), clearing `SHF_EXECINSTR` on `.vutext` (`flags=0x2`), appending `.symtab`/`.strtab` into `build/prepare/slus_21448_annotated.elf`, and emitting `build/prepare/rozu_functions.csv` & `Analysis/ADDRESS_MAP.generated.csv`.
+  - Verified `124` SCE SDK boundary stubs (`libcdvd`, `libmc`, `libmpeg`, `libipu`, `TTY/FIO/printf`, `SIF/RPC/IOP Heap/Loadfile`, `DECI2`) in `Docs/SDK_STUB_AUDIT.md` & `Port/recomp/rozu.toml` against `rozu_functions.csv` and `ps2_call_list.h` (`0` mismatches); `ctest` `53/53` PASS.
 
 8. FILE-BY-FILE CHANGE LOG
 --------------------------
 - .gitignore, .gitmodules, External/PS2Recomp, architecture/*, gemini_hydrogen/* — COMMITTED (M00 `dba95aec6650c5d22f5909e2efd7b98239528372`).
 - CMakeLists.txt, CMakePresets.json, LICENSE, .gitattributes, Port/*, Tools/*, README.md, Game/PLACE-YOUR-ISO-HERE.txt, *.bat — COMMITTED (M01 `02ac14bc32e4fc0ade8d0265e1185c7bddddf411`).
-- Port/profile/SLUS-21448_v1.00.json — CREATED (M02) — verified SLUS-21448 v1.00 profile.
-- Tools/ror_prepare.py — CREATED (M02) — Phase 1 ISO9660/SHA-256/ELF validator and header emitter.
-- Port/src/rozu/game_disc.{h,cpp}, Port/tests/rozu_disc_test.cpp — CREATED (M02) — C++ `PS2CdImage` disc verifier & tests.
-- Port/CMakeLists.txt, .gitignore, handoff.txt — UPDATED (M02) — wired `game_disc` + `rozu_disc_test` + `__pycache__` ignore.
+- Port/profile/SLUS-21448_v1.00.json, Tools/ror_prepare.py, Port/src/rozu/game_disc.{h,cpp}, Port/tests/rozu_disc_test.cpp, Port/CMakeLists.txt, .gitignore — COMMITTED (M02 `3ab9347ccd23bfe1152f1eb8ff6b99b14b22a338`).
+- Tools/ror_prepare.py — UPDATED (M03) — added Phase 2 function discovery, annotated ELF builder, and `--verify-output`.
+- Docs/SDK_STUB_AUDIT.md — CREATED (M03) — evidence-backed SDK boundary stub audit (`124` stubs + false-positive rejections).
+- Port/recomp/rozu.toml — CREATED (M03) — strict explicit PS2Recomp configuration.
+- Analysis/ADDRESS_MAP.generated.csv — CREATED (M03) — symbol/provenance address map (`9,016` entries, zero game bytes).
+- handoff.txt — UPDATED (M03).
 
 9. DISCOVERED SYMBOLS / ADDRESSES / ASSUMPTIONS (VERIFIED VS UNVERIFIED)
 ------------------------------------------------------------------------
@@ -201,22 +203,21 @@ HANDOFF.TXT — RULE OF ROSE (PS2) NATIVE PC STATIC RECOMPILATION
 - gemini_hydrogen/STEP_INDEX.txt
 - gemini_hydrogen/Gemini_Step_001.txt .. Gemini_Step_006.txt (M00–M05: READY)
 - gemini_hydrogen/Gemini_Step_007.txt .. Gemini_Step_013.txt (M06–M12: CONDITIONAL)
-- NEXT ONE TO RUN: gemini_hydrogen/Gemini_Step_004.txt (M03 / Gate G1b)
+- NEXT ONE TO RUN: gemini_hydrogen/Gemini_Step_005.txt (M04 / Gate G2)
 
 15. NEXT 1-3 ACTIONS, WITH COMMANDS AND PRECISE FILE PATHS
 ----------------------------------------------------------
-1. Feed `gemini_hydrogen/Gemini_Step_004.txt` (M03 / Gate G1b) to Gemini Hydrogen.
-2. Hydrogen executes M03: extends `Tools/ror_prepare.py` with full `SLUS_214.48` function
-   discovery (`.text` + 1,449 `.gnu.linkonce.t.*` + 284 `.gnu.linkonce.d.*` vtables + 4,025 `jal`,
-   strict `.vutext` exclusion), runs `ps2_analyzer`, audits SDK stubs (`rozu_sdk_stubs_audit.md`),
-   and emits `Port/recomp/rozu.toml`.
-3. Proceed to `gemini_hydrogen/Gemini_Step_005.txt` (M04) after M03 PASS.
+1. Execute `gemini_hydrogen/Gemini_Step_005.txt` (M04 / Gate G2).
+2. Implement `Tools/generate.py` and `Port/tests/rozu_poc_test.cpp`, validate real
+   recompiled `SLUS_214.48` execution, run full `ps2_recomp` pass (`0` decode errors),
+   and compile `rozu_game_code`.
+3. Proceed to `gemini_hydrogen/Gemini_Step_006.txt` (M05 / Gate G3) after M04 PASS.
 
 16. NEXT SUCCESS CRITERIA / STOP CONDITIONS
 -------------------------------------------
-- Gate G1b (M03): annotated ELF (`slus_21448_annotated.elf`) + `rozu_functions.csv` +
-  `rozu_sdk_stubs_audit.md` + `Port/recomp/rozu.toml`, 0 entries inside `.vutext`, and all 1,449
-  `.gnu.linkonce.t.*` functions present.
+- Gate G2 (M04): `rozu_poc_test` exits `0`, full `Tools/generate.py` exits `0` with
+  `0` decode failures / `0` `.vutext` functions, `rozu_game_code` builds (`librozu_game_code.a`),
+  and `Port/generated/` remains 100% git-ignored.
 
 17. WARNINGS / COPYRIGHT AND GIT HYGIENE
 ----------------------------------------

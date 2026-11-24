@@ -1,0 +1,165 @@
+# RozuRecomp — Rule of Rose (SLUS-21448 v1.00) PS2Recomp configuration
+# Milestone M03 / Gate G1b: explicit SDK boundary stubs only.
+
+[general]
+input = "build/prepare/slus_21448_annotated.elf"
+ghidra_output = "build/prepare/rozu_functions.csv"
+output = "Port/generated"
+single_file_output = false
+low_memory_mode = false
+output_worker_threads = 0
+
+patch_syscalls = false
+patch_cop0 = false
+patch_cache = false
+auto_stub_by_name = false
+direct_tail_calls = false
+
+# Verified SCE SDK IOP/RPC/CDVD/MC/FIO/TTY/MPEG/IPU/DECI2 stubs.
+# Every entry matches an exact function in build/prepare/rozu_functions.csv
+# and a native symbol in External/PS2Recomp/ps2xRuntime/include/ps2_call_list.h.
+stubs = [
+    # libcdvd (0x0024B490..0x0024D130)
+    "sceCdCallback@0x0024B490",
+    "sceCdInitEeCB@0x0024B668",
+    "sceCdSearchFile@0x0024BD98",
+    "sceCdNcmdDiskReady@0x0024BF10",
+    "sceCdSync@0x0024BFA8",
+    "sceCdSyncS@0x0024C048",
+    "sceCdInit@0x0024C2C0",
+    "sceCdDiskReady@0x0024C7C0",
+    "sceCdRead@0x0024C9E0",
+    "sceCdGetDiskType@0x0024CC58",
+    "sceCdGetError@0x0024CC80",
+    "sceCdStatus@0x0024CD18",
+    "sceCdMmode@0x0024CF78",
+    "sceCdReadClock@0x0024D070",
+    "sceCdTrayReq@0x0024D130",
+
+    # libmc (0x0024D220..0x0024E948)
+    "sceMcInit@0x0024D220",
+    "sceMcEnd@0x0024D448",
+    "sceMcChangeThreadPriority@0x0024D4B0",
+    "sceMcGetSlotMax@0x0024D570",
+    "sceMcOpen@0x0024D630",
+    "sceMcMkdir@0x0024D758",
+    "sceMcClose@0x0024D790",
+    "sceMcSeek@0x0024D850",
+    "mceIntrReadFixAlign@0x0024D930",
+    "sceMcRead@0x0024D9E0",
+    "sceMcWrite@0x0024DAF8",
+    "sceMcSync@0x0024DC70",
+    "mceGetInfoApdx@0x0024DD38",
+    "sceMcGetInfo@0x0024DD90",
+    "sceMcGetDir@0x0024DF80",
+    "mceStorePwd@0x0024E0D0",
+    "sceMcChdir@0x0024E160",
+    "sceMcFormat@0x0024E2A0",
+    "sceMcDelete@0x0024E370",
+    "sceMcFlush@0x0024E490",
+    "sceMcSetFileInfo@0x0024E550",
+    "sceMcRename@0x0024E720",
+    "sceMcUnformat@0x0024E878",
+    "sceMcGetEntSpace@0x0024E948",
+
+    # libmpeg (0x0024EB28..0x00253DC0)
+    "sceMpegCreate@0x0024EB28",
+    "sceMpegInit@0x0024F6D0",
+    "sceMpegAddBs@0x0024F788",
+    "sceMpegGetPicture@0x0024F7C8",
+    "sceMpegGetPictureRAW8@0x0024F810",
+    "sceMpegReset@0x0024F868",
+    "sceMpegIsEnd@0x0024F8F8",
+    "sceMpegSetDecodeMode@0x0024F908",
+    "sceMpegGetDecodeMode@0x0024F920",
+    "sceMpegAddCallback@0x0024F940",
+    "sceMpegClearRefBuff@0x0024FAF8",
+    "sceMpegGetPictureRAW8xy@0x0024FB50",
+    "sceMpegSetDefaultPtsGap@0x0024FBA0",
+    "sceMpegResetDefaultPtsGap@0x0024FBB8",
+    "sceMpegDispWidth@0x0024FBE0",
+    "sceMpegDispHeight@0x0024FBF0",
+    "sceMpegIsRefBuffEmpty@0x0024FC20",
+    "sceMpegFlush@0x00250798",
+    "sceMpegDemuxPssRing@0x002539C0",
+    "sceMpegDemuxPss@0x00253DA0",
+    "sceMpegAddStrCallback@0x00253DC0",
+
+    # POSIX / TTY / Printf (0x0025DEA8..0x00260110)
+    "write@0x0025DEA8",
+    "read@0x0025DF28",
+    "sceTtyHandler@0x0025E9E8",
+    "sceTtyWrite@0x0025EB80",
+    "sceTtyRead@0x0025ECF8",
+    "sceTtyInit@0x0025EDC8",
+    "scePrintf@0x00260110",
+
+    # libSif / RPC (0x00260288..0x00261A60)
+    "sceSifInitCmd@0x00260288",
+    "sceSifExitCmd@0x00260508",
+    "sceSifAddCmdHandler@0x00260570",
+    "sceSifRemoveCmdHandler@0x002605E8",
+    "sceSifSendCmd@0x00260770",
+    "sceSifCmdIntrHdlr@0x002607F0",
+    "sceSifWriteBackDCache@0x00260938",
+    "sceSifInitRpc@0x002609E8",
+    "sceRpcGetFPacket@0x00260C78",
+    "sceRpcGetFPacket2@0x00260CA8",
+    "sceSifGetOtherData@0x00260EC8",
+    "sceSifBindRpc@0x00261190",
+    "sceSifCallRpc@0x00261370",
+    "sceSifCheckStatRpc@0x00261570",
+    "sceSifSetRpcQueue@0x002615B0",
+    "sceSifRegisterRpc@0x00261648",
+    "sceSifRemoveRpc@0x00261718",
+    "sceSifRemoveRpcQueue@0x002617B0",
+    "sceSifGetNextRequest@0x00261840",
+    "sceSifExecRequest@0x00261898",
+    "sceSifRpcLoop@0x00261A60",
+
+    # FIO RPC client (0x002622B0..0x00263328)
+    "sceFsInit@0x002622B0",
+    "sceFsReset@0x00262548",
+    "sceOpen@0x002627B0",
+    "sceClose@0x00262A40",
+    "sceLseek@0x00262BB8",
+    "sceRead@0x00262DF8",
+    "sceWrite@0x00263068",
+    "sceIoctl@0x00263328",
+
+    # IOP Heap / Loadfile (0x002656D8..0x00266B58)
+    "sceSifInitIopHeap@0x002656D8",
+    "sceSifAllocIopHeap@0x00265760",
+    "sceSifAllocSysMemory@0x002657D0",
+    "sceSifLoadIopHeap@0x002658E8",
+    "sceSifLoadFileReset@0x00265DB8",
+    "sceSifLoadModuleBuffer@0x002663C0",
+    "sceSifLoadModule@0x00266628",
+    "sceSifLoadElfPart@0x00266668",
+    "sceSifLoadElf@0x00266790",
+    "sceSifGetIopAddr@0x002667B8",
+    "sceSifSetIopAddr@0x002668A8",
+    "sceSifResetIop@0x00266988",
+    "sceSifIsAliveIop@0x00266AE0",
+    "sceSifSyncIop@0x00266B08",
+    "sceSifRebootIop@0x00266B58",
+
+    # DECI2 debug stubs (0x00269710..0x002698F8)
+    "sceDeci2Open@0x00269710",
+    "sceDeci2Close@0x00269758",
+    "sceDeci2ReqSend@0x00269780",
+    "sceDeci2Poll@0x002697B0",
+    "sceDeci2ExRecv@0x00269830",
+    "sceDeci2ExSend@0x00269868",
+    "sceDeci2ExReqSend@0x002698A0",
+    "sceDeci2ExLock@0x002698D0",
+    "sceDeci2ExUnLock@0x002698F8",
+
+    # libipu (0x00269A38..0x00269D50)
+    "sceIpuStopDMA@0x00269A38",
+    "sceIpuRestartDMA@0x00269B20",
+    "sceIpuSync@0x00269C70",
+    "sceIpuInit@0x00269D50",
+]
+
+skip = []
