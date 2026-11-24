@@ -60,27 +60,24 @@ HANDOFF.TXT — RULE OF ROSE (PS2) NATIVE PC STATIC RECOMPILATION
 
 4. BRANCH, HEAD SHA, WORKTREE STATUS, UNCOMMITTED CHANGES
 ---------------------------------------------------------
-- Branch: `rozu/port-bringup` (M04 commit `2eed78cef8cf341340590602e2cea2fd2adeed51`)
-- Worktree status: M05 `External/PS2Recomp` (`rozu-port` @ `d25cb6ac7e2c6d8b04bb635338d7fe8164df83b5`),
-  `Port/src/rozu/hle/tty_bridge.{h,cpp}`, `Port/src/rozu/watchdog.cpp`,
-  `Port/src/main.cpp`, `Port/CMakeLists.txt`, `Tools/rozu_boot_check.py`, and
-  `handoff.txt` ready for M05 commit on `rozu/port-bringup`.
+- Branch: `rozu/port-bringup` (M06-wip `e2180bf`; `External/PS2Recomp` `rozu-port` @ `6d81ca17bb2463b3574a5bf3ea057aaa0dadf017`)
+- Worktree status: `Port/src/rozu/config.cpp`, `Tools/rozu_video_check.py`, `External/PS2Recomp`, and `handoff.txt` ready for M06 commit on `rozu/port-bringup`.
   `Port/generated/`, `build/`, `game_data/`, `memcards/` confirmed git-ignored.
   Only user's untracked `Google_Neon_Rule_of_Rose_Recomp_Architect.txt` remains untracked.
 - Ownership: Hydrogen owns all implementation/build/test/commit steps from M00 onward.
 
 5. CURRENT PHASE + ACTIVE STEP ID + % STATUS (ESTIMATE)
 -------------------------------------------------------
-- Current Phase: M05 (Gate G3) COMPLETE -> Ready for M06 (CONDITIONAL)
-- Active Step ID: Completed `gemini_hydrogen/Gemini_Step_006.txt` (M05 / Gate G3);
-  next is `gemini_hydrogen/Gemini_Step_007.txt` (M06 — CONDITIONAL).
+- Current Phase: M06 (Gate G4a) COMPLETE -> Ready for M07 (`Gemini_Step_008.txt`, CONDITIONAL)
+- Active Step ID: Completed `gemini_hydrogen/Gemini_Step_007.txt` (M06 / Gate G4a);
+  next is `gemini_hydrogen/Gemini_Step_008.txt` (M07 / Gate G4b — CONDITIONAL).
 - Architecture / Planning Status: 100% COMPLETE (estimate)
 - Implementation / Build / Boot / Playable Status:
-  - Planned: M00–M12 (M03–M05 READY; M06–M12 CONDITIONAL)
-  - Implemented: ~50% (M00–M05 complete: linked `rozu` + verified EE/IOP boot trace)
-  - Built: `build/linux/bin/rozu` (`3.1 GiB`), `rozu_game_code` (`13 GiB`), `rozu_host_lib`, all unit/PoC/IOP/GS tests
-  - Booted: YES (headless `ROZU_HEADLESS=1` 300-field deterministic trace: all 9 IOPCONF modules + RXSNDDRV RPC + `SYSTEM.INI` + `GsSetCrt` 640x448)
-  - Playable: NOT YET (M06–M12)
+  - Planned: M00–M12 (M03–M06 COMPLETE; M07–M12 CONDITIONAL)
+  - Implemented: ~55% (M00–M06 complete: FFmpeg `.PSS` FMV playback + verified video & audio up to Title Screen)
+  - Built: `build/linux/bin/rozu` (`3.1 GiB`, FFmpeg ON), `rozu_game_code` (`13 GiB`), `rozu_host_lib`, all unit/PoC/IOP/GS tests
+  - Booted: YES (boot -> legal disclaimer -> `CP_LOGO.PSS` -> `MV00_AD.PSS` -> `RULE of ROSE` Title Screen / Main Menu with 48 kHz stereo PCM audio)
+  - Playable: NOT YET (M07–M12)
 
 6. COMPLETED MILESTONES + PASS EVIDENCE + COMMITS
 -------------------------------------------------
@@ -94,10 +91,14 @@ HANDOFF.TXT — RULE OF ROSE (PS2) NATIVE PC STATIC RECOMPILATION
   - Full `SLUS_214.48` recompilation PASS: `9,016` functions (`8,892` recompiled, `124` stubs, `66,349` resumable entry points), **0 decode failures**, **0 unhandled instructions**, **0 errors**, `9,017` generated `.cpp` files, `0x00100008` registered, `0` `.vutext` entries (`build/test_artifacts/G2/generate.log`).
   - Created `Port/tests/rozu_poc_test.cpp` & enabled `rozu_poc_test` in `Port/CMakeLists.txt`: natively executed 7 real recompiled `SLUS_214.48` functions (`setId`, `getId`, `setMotionSpeed`, `getMotionSpeed`, `setBaseRotate`, `sub_00103390`, `sub_001041c4` 3-op `mult` PRNG) on 32 MB RDRAM + `R5900Context` with **17/17 checks PASS** (`build/test_artifacts/G2/poc_test.log`).
   - Built full `rozu_game_code` static library (`-j 4`, `5313.339s` wall time, `9020/9020` Ninja steps, `0` errors) -> `build/linux/Port/librozu_game_code.a` (`13 GiB`, `RelWithDebInfo`; reusable via `-DROZU_GAME_CODE_LIBRARY=/mnt/6421-8598/building/RozuRecomp/build/linux/Port/librozu_game_code.a`); `ctest` **54/54 PASS**.
-- Hydrogen M05 (Gate G3) COMPLETE on `rozu/port-bringup`:
+- Hydrogen M05 (Gate G3) COMPLETE on `rozu/port-bringup` (`86b6dac`):
   - Wired `Port/src/rozu/hle/tty_bridge.{h,cpp}` (`0x0025DEA8` `write`, `0x00263068` `sceWrite`, `0x0025EB80` `sceTtyWrite`, `0x00260110` `scePrintf`), `ROZU_STOP_AFTER_FIELDS` in `Port/src/rozu/watchdog.cpp`, POSIX crash handler + `PS2X_GS_GPU` wiring in `Port/src/main.cpp`, `-Wl,-u,g_ps2RecompiledFunctionTable` link order fix in `Port/CMakeLists.txt`, and `Tools/rozu_boot_check.py`.
   - Fixed 3 generic runtime bugs on `External/PS2Recomp` (`rozu-port` @ `d25cb6a`): KSEG0 (`0x80000000..0x80100000`) alarm/syscall fallback (`0xFC`/`0xFD`/`-0xFE`), `EeScheduler` priority `0` + `Alarm` interrupt context handling, and `IopModuleLoader::load` overflow into the 2 MiB `IopMemory` heap (plus unit tests in `ps2_runtime_kernel_tests.cpp` and `iop_emulator_tests.cpp`).
   - Gate G3 PASS: `Tools/rozu_boot_check.py` passed 2 consecutive deterministic runs (`7.458s` and `6.776s`, exit `0`, `300` VSync fields, all 9 `IOPCONF.CNF` modules loaded, `RXSNDDRV.IRX` started RX-sound RPC server v1.00, `SYSTEM.INI` loaded, `GsSetCrt` 640x448, DualShock2 mode `0x73`, `0` crashes/missing functions/unresolved imports); `ctest` `54/54` PASS; `ps2x_tests` `472/478` PASS.
+- Hydrogen M06 (Gate G4a) COMPLETE on `rozu/port-bringup`:
+  - `External/PS2Recomp` (`rozu-port` @ `6d81ca1`): added `IPU_TO` DMAC CH4 (`0x1000B400u`) normal-mode completion & `00 00 01 B7` SequenceEnd sentinel detection (`ps2_memory.{h,cpp}`), `sceMpegCbNodata` EOF flushing in `sceMpegGetPicture` (`MPEG.cpp`, `kMaxNodataPumpSteps = 256u`), `EeScheduler` alarm/invocation preemption guard, `GS::latchHostPresentationFrame()` mutex hold across `Flush`/`Sync`/`Present`, non-Windows `GSCpuBackend` fallback (`gs_threaded_backend.cpp`), and unit tests (`ps2_runtime_expansion_tests.cpp`, `ps2_runtime_kernel_tests.cpp`).
+  - Parent repo: `Port/src/rozu/config.cpp` (`PS2X_GS_GPU=0` default on non-Windows) and `Tools/rozu_video_check.py`.
+  - Gate G4a PASS: `Tools/rozu_video_check.py --fields 2900 --runs 2` PASS (`213.74s` & `213.39s`, `wav_peak=3848` 48 kHz stereo PCM, PNGs `field-800` `11.28%`, `field-2000` `54.36%`, `field-2350` `52.67%`, `field-2800` `72.18%` non-black, `Tools/gsr_compare.py` `SAME` on all 4 windows `warn`/`logo`/`post`/`title`), `Tools/rozu_boot_check.py` M05 regression PASS (`11.908s`/`11.519s`), `ctest` `54/54` PASS, `ps2x_tests` `478/484` PASS.
 
 7. VERY SMALL PROGRESS LOG (TIMESTAMPED, APPEND-ONLY)
 -----------------------------------------------------
@@ -156,7 +157,9 @@ HANDOFF.TXT — RULE OF ROSE (PS2) NATIVE PC STATIC RECOMPILATION
 - Port/profile/SLUS-21448_v1.00.json, Tools/ror_prepare.py, Port/src/rozu/game_disc.{h,cpp}, Port/tests/rozu_disc_test.cpp, Port/CMakeLists.txt, .gitignore — COMMITTED (M02 `3ab9347ccd23bfe1152f1eb8ff6b99b14b22a338`).
 - Tools/ror_prepare.py, Docs/SDK_STUB_AUDIT.md, Port/recomp/rozu.toml, Analysis/ADDRESS_MAP.generated.csv — COMMITTED (M03 `77e03357da5b19e6026530e43debeab88b24b3c7`).
 - Tools/generate.py, Port/tests/rozu_poc_test.cpp, Port/CMakeLists.txt, handoff.txt — COMMITTED (M04 `2eed78cef8cf341340590602e2cea2fd2adeed51`).
-- External/PS2Recomp (`rozu-port` @ `d25cb6a`), Port/src/rozu/hle/tty_bridge.{h,cpp}, Port/src/rozu/watchdog.cpp, Port/src/main.cpp, Port/CMakeLists.txt, Tools/rozu_boot_check.py, handoff.txt — READY FOR M05 COMMIT.
+- External/PS2Recomp (`rozu-port` @ `d25cb6a`), Port/src/rozu/hle/tty_bridge.{h,cpp}, Port/src/rozu/watchdog.cpp, Port/src/main.cpp, Port/CMakeLists.txt, Tools/rozu_boot_check.py, handoff.txt — COMMITTED (M05 `86b6dac`).
+- Port/src/rozu/hle/cdvd_bridge.{h,cpp}, External/PS2Recomp (`rozu-port` @ `44def49`) — COMMITTED (`e2180bf` M06-wip).
+- External/PS2Recomp (`rozu-port` @ `6d81ca1`), Port/src/rozu/config.cpp, Tools/rozu_video_check.py, handoff.txt — READY FOR M06 COMMIT.
 
 9. DISCOVERED SYMBOLS / ADDRESSES / ASSUMPTIONS (VERIFIED VS UNVERIFIED)
 ------------------------------------------------------------------------
@@ -209,31 +212,31 @@ HANDOFF.TXT — RULE OF ROSE (PS2) NATIVE PC STATIC RECOMPILATION
 ---------------------------------------------------------
 - See `architecture/unknowns_and_risks.md` (R1–R10).
 - B1 (M00) RESOLVED: `External/PS2Recomp` initialized and pinned on `rozu-port`.
-- B2 (M06): Local Ubuntu host lacks FFmpeg dev packages (`libavcodec-dev` etc. not in `pkg-config`). Either install system FFmpeg dev libs before M06 (`CP_LOGO.PSS`) or test FFmpeg on Windows MSVC build.
+- B2 (M06) RESOLVED: FFmpeg dev packages enabled (`libavcodec 62.11.100`, `libavformat 62.3.100`, `libavutil 60.8.100`, `libswresample 6.1.100`, `libswscale 9.1.100`); `CP_LOGO.PSS` & `MV00_AD.PSS` verified.
 - B3 (M12) VERIFIED: `gs_gl.cpp` is WGL-only on `#if defined(_WIN32)` and cleanly falls back on Linux (`"GPU GS backend is only implemented for Windows"`); `GSCpuBackend` (`PS2X_GS_GPU=0`) is fully portable for M05–M10 Linux bring-up.
-- Linux GCC note: requires `-msse4.1` C/CXX flags (matching upstream `.github/workflows/build.yml`).
+- Note for M07: `ROZU_HEADLESS=1` (`FLAG_WINDOW_HIDDEN`) leaves `LoadImageFromScreen()` blank on X11/GLFW, while `.gsr` VRAM checkpoints (`PS2X_GS_RECORD`) capture real GS VRAM even under headless mode; `PS2X_STATE_SAVE_AT` does not serialize `g_mpeg_stub_state` (`EeScheduler` / active `.PSS` decode state), so save checkpoints after `.PSS` ends (`title_2850.state`).
 
 13. CHANGES TO ENGINE FORK / SUBMODULE PINNING STATUS
 -----------------------------------------------------
-- `External/PS2Recomp` initialized from `LightVelox/PS2Recomp` `d06a4ab4a6902e0ae324f184c22581c3aa387c36` and pinned on local branch `rozu-port` at `d25cb6ac7e2c6d8b04bb635338d7fe8164df83b5` (added M05 fixes: KSEG0 alarm syscall override fallback, priority-0 thread/alarm support in `EeScheduler`, and IOP module heap overflow in `IopModuleLoader`).
+- `External/PS2Recomp` pinned on local branch `rozu-port` at `6d81ca17bb2463b3574a5bf3ea057aaa0dadf017` (M05 + M06 fixes: KSEG0 alarm fallback, prio-0 scheduler, IOP heap spill, INTC_STAT W1C/W1T, IPU_TO DMAC CH4 + SequenceEnd sentinel, `sceMpegCbNodata` EOF flush, alarm preemption guard, CPU-GS fallback + `latchHostPresentationFrame` mutex).
 
 14. PROMPT FILES WRITTEN
 ------------------------
 - gemini_hydrogen/README.txt
 - gemini_hydrogen/STEP_INDEX.txt
-- gemini_hydrogen/Gemini_Step_001.txt .. Gemini_Step_006.txt (M00–M05: COMPLETE)
-- gemini_hydrogen/Gemini_Step_007.txt .. Gemini_Step_013.txt (M06–M12: CONDITIONAL)
-- NEXT ONE TO RUN: gemini_hydrogen/Gemini_Step_007.txt (M06 — CONDITIONAL)
+- gemini_hydrogen/Gemini_Step_001.txt .. Gemini_Step_007.txt (M00–M06: COMPLETE)
+- gemini_hydrogen/Gemini_Step_008.txt .. Gemini_Step_013.txt (M07–M12: CONDITIONAL)
+- NEXT ONE TO RUN: gemini_hydrogen/Gemini_Step_008.txt (M07 — CONDITIONAL)
 
 15. NEXT 1-3 ACTIONS, WITH COMMANDS AND PRECISE FILE PATHS
 ----------------------------------------------------------
-1. Inspect `gemini_hydrogen/Gemini_Step_007.txt` (M06 — CONDITIONAL) before proceeding to title screen / first-frame bring-up.
-2. Address FMV (`CP_LOGO.PSS` / FFmpeg) handling for Linux/Windows cleanly during M06 bring-up.
-3. Capture deterministic first-frame framebuffer + live interactive smoke run.
+1. Execute `gemini_hydrogen/Gemini_Step_008.txt` (M07 / Gate G4b): Title Screen (`field 2800+`, checkpoint `build/test_artifacts/G4a/title_2850.state`), Main Menu navigation (`PS2X_PAD_SCRIPT`), DualShock 2 config in `Port/src/rozu/config.cpp`, and `RXSNDDRV` `libsd` ADPCM/AutoDMA audio check (`Tools/rozu_menu_check.py`).
+2. Inspect `External/PS2Recomp/ps2xIOP/src/emulator/devices/iop_spu2.cpp` + `core/iop_memory.cpp` (line 339 skips `autoDma(core)` if `sceSdBlockTrans` / AutoDMA PCM is triggered during Title BGM / `.STR`).
+3. Keep `External/PS2Recomp` fixes strictly generic with unit tests.
 
 16. NEXT SUCCESS CRITERIA / STOP CONDITIONS
 -------------------------------------------
-- Gate G4 (M06): First visual output / title screen reached cleanly under `rozu` with deterministic FMV/menu progression and 0 missing functions or crashes.
+- Gate G4b (M07): Title/Main Menu responds deterministically to `PS2X_PAD_SCRIPT` (`START` -> `DOWN` -> `UP`), non-silent ADPCM/BGM audio confirmed, dual-run VRAM hashes match 100%.
 
 17. WARNINGS / COPYRIGHT AND GIT HYGIENE
 ----------------------------------------
@@ -244,42 +247,22 @@ HANDOFF.TXT — RULE OF ROSE (PS2) NATIVE PC STATIC RECOMPILATION
 
 18. LAST UPDATED + AUTHOR / MODEL
 ---------------------------------
-- 2026-11-24 13:39 +0530 | Gemini 4 Hydrogen (High) — Implementation Agent
+- 2026-11-25 00:06 +0530 | Gemini Hydrogen — Implementation Agent
 
 ========================================================================
-M06 (Gate G4a) IN PROGRESS - PAUSED ON LINUX FFMPEG DEV DEPENDENCY
+M06 (Gate G4a) COMPLETE - VERIFIED EVIDENCE & FIELD MAP
 ========================================================================
-Completed in M06 bring-up before FMV:
-1. Port-side CDVD hook (Port/src/rozu/hle/cdvd_bridge.{h,cpp}):
-   - Replaced unstubbed sceCdReadDvdDualInfo (0x0024cea8) to return single-layer
-     DVD-5 info (*on_dual=0, *layer1_start=0, return 1) instead of retrying
-     unsupported IOP S-Cmd RPC 0x80000593 infinitely at "rxfile : disk type = 20".
-2. External/PS2Recomp INTC W1C/W1T & VBlank IRQ latching (rozu-port):
-   - PS2Memory::writeIORegister now implements INTC_STAT (0x1000F000 W1C) and
-     INTC_MASK (0x1000F010 W1T), plus PS2Memory::raiseIntcStat(cause) called
-     unconditionally by EeScheduler::dispatchIrq for non-DMAC causes.
-   - Prevents VSync2 (0x25de00) from misreading written 0x4 back as VBlank-active,
-     returning prematurely, and leaving EeScheduler::m_vsyncTickAddress pointing
-     at guest stack (previously corrupted $ra at 0x01fffe78 with field tick 0x1e).
-3. Verified deterministic pre-FMV progression:
-   - ctest --test-dir build/linux: 54/54 passed.
-   - Tools/rozu_boot_check.py --fields 600 --runs 2 (PS2X_GS_BANDS=4):
-     run 1: 18.376s, run 2: 18.6s, 9/9 IOPCONF modules, rxsnd=True, files=11,
-     failures=0, overall_pass=True (artifact: build/test_artifacts/G4a/boot600/summary.json).
-   - Boot advances through ISO9660 dir reads (/DATA, BG, CH, MNURPK, EFF, SEQ),
-     512x448 switch, 2 XVAB banks, /BASLUS-21448/* MC probe, sector 286 (/MOVIE),
-     and reaches /MOVIE/CP_LOGO.PSS;1 where runtime prints:
-     "[MPEG] runtime built without FFmpeg; MPEG video decode is disabled."
-
-Exact Blocker for M06 (G4a) -> M07 (G4b) -> M08 (G5):
-- pkg-config cannot find libavcodec, libavformat, libavutil, libswscale, libswresample
-  (only runtime .so libs exist on host; dev headers/.pc files are absent), so CMake
-  configured with ROZU_ENABLE_FFMPEG=OFF / PS2X_ENABLE_FFMPEG=OFF.
-- Per Gemini_Step_007.txt (F.1 / J), G4a cannot pass without real FFmpeg decode.
-- Required user command to unblock FFmpeg and continue M06-M08:
-    sudo apt-get update && sudo apt-get install -y \
-      libavcodec-dev libavformat-dev libavutil-dev libswscale-dev libswresample-dev
-  Candidate version observed via apt-cache policy: 7:8.0.1-3ubuntu2.
-- After installing, reconfigure CMake so ROZU_ENABLE_FFMPEG=ON / PS2X_ENABLE_FFMPEG=ON,
-  rebuild ps2_runtime + rozu (no generated codegen needed unless headers change),
-  and verify CP_LOGO.PSS -> Title Screen -> M07 (G4b audio) -> M08 (G5 menu/New Game).
+1. Exact Measured Screen & FMV Field Map (`rozu`, NTSC 60 Hz):
+   - Legal disclaimer screen: active by field `800` (`field-800.png` 11.28% non-black, VRAM 13.04%).
+   - `/MOVIE/CP_LOGO.PSS;1` (video-only `mpeg2video` 512x336 30fps, 22.00s): starts field `927`, displays `"Published by Atlus USA"` (`field-2000.png` 54.36% non-black, VRAM 40.12%), completes cleanly at field `2250`.
+   - `/MOVIE/MV00_AD.PSS;1` (video-only `mpeg2video` 512x336 30fps, 06:21.67): starts field `2257`, renders rose petals / Jennifer on park bench (`field-2350.png` 52.67% non-black, VRAM 39.06%).
+   - `RULE of ROSE` Title Screen (`Press START button` -> `New Game / Load Game / Option`): reached via idle end or `2500v:start:10` by field `2800` (`field-2800.png` 72.18% non-black, VRAM 60.35%). Unskipped 4106-field run also reached Main Menu at `field-3301` (`72.18%`) and `ADPCM '47'` / Title audio (`t=52.30s..62.36s`, `peak=16530`, `rms=648.7`).
+2. `RXSNDDRV.IRX` & Audio Profile (for M07):
+   - `Tools/irx_imports.py` on `MODULES/RXSNDDRV.IRX` (`74,005 B`): imports `libsd v1.05` ordinals `[4, 5, 6, 7, 8, 9, 10, 11, 13, 15, 17, 18, 20, 23, 26]` (including `17 = sceSdVoiceTrans` and `18 = sceSdBlockTrans`).
+   - `rxsnd` opens two XVAB banks (`499,904 B` + `26,944 B`) on SPU heap at boot and `ADPCM '47'` (`8,192 B`) entering Title Screen; emits non-zero 48 kHz stereo PCM (`wav_peak=3848` in `video_check_v2`, `wav_peak=16530` in `m06_v2_4500`).
+3. M06 Verification Commands & Artifacts:
+   - `python3 Tools/rozu_video_check.py --exe build/linux/bin/rozu --iso "Game/Rule of Rose (USA).iso" --fields 2900 --runs 2 --timeout 420 --save-state 2850:build/test_artifacts/G4a/title_2850.state --out build/test_artifacts/G4a/video_check_v2` -> exit `0` (`overall_pass=True`, `run_1` `213.74s` / `run_2` `213.39s`, `gsr_compare.py` `SAME` on `warn`/`logo`/`post`/`title`).
+   - `python3 Tools/rozu_boot_check.py --exe build/linux/bin/rozu --iso "Game/Rule of Rose (USA).iso" --fields 300 --timeout 120 --runs 2 --out build/test_artifacts/G4a/boot_reg` -> exit `0` (`overall_pass=True`, `11.908s`/`11.519s`, `9/9` IOP modules, `rxsnd=True`).
+   - `ctest --test-dir build/linux --output-on-failure` -> exit `0` (`54/54` PASS).
+   - `(cd External/PS2Recomp && ../../build/linux/External/PS2Recomp/ps2xTest/ps2x_tests)` -> `478/484` PASS (both new M06 tests `PS2Memory IPU_TO` + `sceMpegGetPicture` `sceMpegCbNodata` EOF flush PASS; `6` pre-existing failures in `GSGolden` + `PS2FloatSemantics`/VU float suites).
+   - Commits: `External/PS2Recomp` (`rozu-port`) @ `6d81ca17bb2463b3574a5bf3ea057aaa0dadf017`; parent `RozuRecomp` (`rozu/port-bringup`) M06 commit next.

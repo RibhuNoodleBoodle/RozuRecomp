@@ -17,7 +17,11 @@ namespace rozu::config
         constexpr std::string_view kDefaults =
             "[Settings]\n"
             "PS2X_MEMCARD=1\n"
+#ifdef _WIN32
             "PS2X_GS_GPU=1\n"
+#else
+            "PS2X_GS_GPU=0\n"
+#endif
             "PS2X_GS_THREAD=1\n"
             "PS2X_MTVU=0\n"
             "PS2X_VU1_RECOMP=0\n"
