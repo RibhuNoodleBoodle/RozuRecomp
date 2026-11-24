@@ -12,6 +12,7 @@
 #include "rozu/display.h"
 #include "rozu/function_hooks.h"
 #include "rozu/game_disc.h"
+#include "rozu/hle/cdvd_bridge.h"
 #include "rozu/hle/tty_bridge.h"
 #include "rozu/log.h"
 #include "rozu/watchdog.h"
@@ -284,6 +285,7 @@ int main(int argc, char *argv[])
                                              : PS2Runtime::MissingFunctionPolicy::Stop);
         rozu::FunctionHooks::instance().attach(runtime);
         rozu::installEeFloatingPointMode(runtime, runtime.cpu().pc);
+        rozu::installCdvdBridge(runtime);
         rozu::installTtyBridge(runtime);
 #if ROZU_HAS_VU1_PROGRAMS
         registerGeneratedVu1Programs();

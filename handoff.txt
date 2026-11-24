@@ -245,3 +245,41 @@ HANDOFF.TXT — RULE OF ROSE (PS2) NATIVE PC STATIC RECOMPILATION
 18. LAST UPDATED + AUTHOR / MODEL
 ---------------------------------
 - 2026-11-24 13:39 +0530 | Gemini 4 Hydrogen (High) — Implementation Agent
+
+========================================================================
+M06 (Gate G4a) IN PROGRESS - PAUSED ON LINUX FFMPEG DEV DEPENDENCY
+========================================================================
+Completed in M06 bring-up before FMV:
+1. Port-side CDVD hook (Port/src/rozu/hle/cdvd_bridge.{h,cpp}):
+   - Replaced unstubbed sceCdReadDvdDualInfo (0x0024cea8) to return single-layer
+     DVD-5 info (*on_dual=0, *layer1_start=0, return 1) instead of retrying
+     unsupported IOP S-Cmd RPC 0x80000593 infinitely at "rxfile : disk type = 20".
+2. External/PS2Recomp INTC W1C/W1T & VBlank IRQ latching (rozu-port):
+   - PS2Memory::writeIORegister now implements INTC_STAT (0x1000F000 W1C) and
+     INTC_MASK (0x1000F010 W1T), plus PS2Memory::raiseIntcStat(cause) called
+     unconditionally by EeScheduler::dispatchIrq for non-DMAC causes.
+   - Prevents VSync2 (0x25de00) from misreading written 0x4 back as VBlank-active,
+     returning prematurely, and leaving EeScheduler::m_vsyncTickAddress pointing
+     at guest stack (previously corrupted $ra at 0x01fffe78 with field tick 0x1e).
+3. Verified deterministic pre-FMV progression:
+   - ctest --test-dir build/linux: 54/54 passed.
+   - Tools/rozu_boot_check.py --fields 600 --runs 2 (PS2X_GS_BANDS=4):
+     run 1: 18.376s, run 2: 18.6s, 9/9 IOPCONF modules, rxsnd=True, files=11,
+     failures=0, overall_pass=True (artifact: build/test_artifacts/G4a/boot600/summary.json).
+   - Boot advances through ISO9660 dir reads (/DATA, BG, CH, MNURPK, EFF, SEQ),
+     512x448 switch, 2 XVAB banks, /BASLUS-21448/* MC probe, sector 286 (/MOVIE),
+     and reaches /MOVIE/CP_LOGO.PSS;1 where runtime prints:
+     "[MPEG] runtime built without FFmpeg; MPEG video decode is disabled."
+
+Exact Blocker for M06 (G4a) -> M07 (G4b) -> M08 (G5):
+- pkg-config cannot find libavcodec, libavformat, libavutil, libswscale, libswresample
+  (only runtime .so libs exist on host; dev headers/.pc files are absent), so CMake
+  configured with ROZU_ENABLE_FFMPEG=OFF / PS2X_ENABLE_FFMPEG=OFF.
+- Per Gemini_Step_007.txt (F.1 / J), G4a cannot pass without real FFmpeg decode.
+- Required user command to unblock FFmpeg and continue M06-M08:
+    sudo apt-get update && sudo apt-get install -y \
+      libavcodec-dev libavformat-dev libavutil-dev libswscale-dev libswresample-dev
+  Candidate version observed via apt-cache policy: 7:8.0.1-3ubuntu2.
+- After installing, reconfigure CMake so ROZU_ENABLE_FFMPEG=ON / PS2X_ENABLE_FFMPEG=ON,
+  rebuild ps2_runtime + rozu (no generated codegen needed unless headers change),
+  and verify CP_LOGO.PSS -> Title Screen -> M07 (G4b audio) -> M08 (G5 menu/New Game).

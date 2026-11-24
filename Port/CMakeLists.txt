@@ -24,6 +24,7 @@ set(ROZU_HOST_SOURCES
     src/rozu/display.cpp
     src/rozu/function_hooks.cpp
     src/rozu/game_disc.cpp
+    src/rozu/hle/cdvd_bridge.cpp
     src/rozu/hle/tty_bridge.cpp
     src/rozu/log.cpp
     src/rozu/sha256.cpp
