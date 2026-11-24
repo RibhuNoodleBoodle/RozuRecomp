@@ -1,0 +1,170 @@
+================================================================================
+GEMINI_STEP_007.TXT — MILESTONE M06 (GATE G4a) [CONDITIONAL]
+BOOT TO FIRST RELIABLY VERIFIED VIDEO, CP_LOGO.PSS FMV, AND INITIAL AUDIO
+================================================================================
+
+STATUS: CONDITIONAL — UNBLOCKED ONLY AFTER M05 (GATE G3) PASSES.
+Do NOT invent guest addresses, FMV hook sites, or patches. Base EVERY edit on
+actual M05/M06 runtime traces and verified `External/PS2Recomp` source code!
+
+A. ROLE
+-------
+You are GEMINI HYDROGEN, the implementation and testing agent.
+
+B. OBJECTIVE & PREREQUISITES
+----------------------------
+Objective:
+  Advance Rule of Rose from M05's early boot trace through its initial visual
+  and audio boot sequence (`CP_LOGO.PSS` logo FMV, memory-card / warning /
+  copyright screens, and first title-screen display), verifying:
+  1. Real non-black rendered GS frames via CRTC presentation (`PMODE`/`DISPFB`/
+     `DISPLAY`/`SMODE2`);
+  2. Real MPEG-2 / IPU `.PSS` playback for `CP_LOGO.PSS` via `PS2X_ENABLE_FFMPEG`
+     (or clearly documented host-package blocker if Linux lacks `libavcodec-dev`
+     with exact resolution steps);
+  3. Clean `RXSNDDRV.IRX` -> `LIBSD.IRX` -> `IopSpu2` audio initialization and
+     initial PCM capture check (`Tools/audio_check.py`).
+
+Prerequisites:
+  - M05 (`Gemini_Step_006.txt`) committed with Gate G3 PASS.
+  - `handoff.txt` records exact M05 boot log and where boot stopped/advanced.
+
+Acceptance Criteria (Gate G4a):
+  - Deterministic CPU-GS run (`PS2X_GS_GPU=0`, `PS2X_MTVU=0`) renders verified
+    non-black initial logo/screen frames (dumped via `PS2X_GS_RECORD` /
+    `Tools/frame_report.py`, > 5% non-black pixels on active frames).
+  - `CP_LOGO.PSS` decodes real frames and transitions cleanly to the next boot
+    screen without hanging or crashing (when FFmpeg is enabled; if FFmpeg dev
+    libs are unavailable on Linux host, stop and report the exact blocker rather
+    than pretending FMV passed!).
+  - Dual-run deterministic GS VRAM hash comparison (`Tools/gsr_compare.py`) is
+    100% identical across 2 runs.
+  - Zero crashes, zero missing guest branches, zero fatal SPU2/IOP stalls.
+
+C. READ FIRST
+-------------
+1. Read `./handoff.txt` completely (especially M05 boot trace & FFmpeg status).
+2. Read `architecture/unknowns_and_risks.md` (R5 MPEG/IPU, R6 MCMAN, R7 RXSNDDRV,
+   R10 i3d GS/VU) and `architecture/build_and_test_strategy.md` (Gate G4).
+3. Inspect `External/PS2Recomp/ps2xRuntime/src/lib/Kernel/Stubs/MPEG.cpp` and
+   `IPU.cpp` to understand exact `sceMpeg*`/`sceIpu*` HLE state machine.
+
+D. EVIDENCE
+-----------
+CONFIRMED FACTS:
+- `/MOVIE/CP_LOGO.PSS;1` (5,193,732 B) is a standard PS2 MPEG-2 Program Stream
+  (`0xE0` video packets, `0xB5` MPEG-2 extensions).
+- `SLUS_214.48` links `libmpeg 3000` and `libipu 3000` (`_sceMpegSliceA0`,
+  `sceMpegGetPicture`, `libipu` reset strings).
+- `External/PS2Recomp` already contains `Stubs/MPEG.cpp`, `Stubs/IPU.cpp`, and
+  `PS2X_ENABLE_FFMPEG` CMake integration (Windows auto-fetches prebuilt FFmpeg
+  `n7.1-241205`; Linux uses `pkg_check_modules` for `libavcodec`, `libavformat`,
+  `libavutil`, `libswscale`, `libswresample`).
+
+UNKNOWN / TO MEASURE AT RUNTIME IN THIS STEP:
+- Exact sequence of `sceMpeg*` / `sceIpu*` / `sceCdRead` calls Rule of Rose's
+  `TskMovie` class makes to demux & display `CP_LOGO.PSS`.
+- Exact GS CRTC display setup (`PMODE`, `DISPFB`, `SMODE2`) and whether `i3d`
+  uses interlaced field mode (`FFMD=0` vs `1`) or GS `FINISH` interrupts.
+- Whether `RXSNDDRV.IRX` calls `sceSdBlockTrans` (AutoDMA) for FMV audio.
+
+E. FILE-LEVEL IMPLEMENTATION SCOPE
+----------------------------------
+EDIT (only as driven by measured M06 traces):
+- `CMakeLists.txt` — ensure `ROZU_ENABLE_FFMPEG=ON` cleanly links FFmpeg when
+  present and prints an explicit diagnostic if missing on Linux.
+- `External/PS2Recomp` (branch `rozu-port`, generic fixes only with unit tests):
+  - Any generic `Stubs/MPEG.cpp` / `Stubs/IPU.cpp` / GS / INTC / IOP fixes
+    required to decode `CP_LOGO.PSS` and present frames faithfully.
+- `Tools/rozu_boot_check.py` (or `Tools/rozu_video_check.py`) — add GS frame
+  capture (`PS2X_GS_RECORD`), `Tools/frame_report.py` non-black verification,
+  `Tools/gsr_compare.py` dual-run determinism check, and `Tools/audio_check.py`
+  PCM energy check.
+- `Port/recomp/rozu.toml` / `Docs/SDK_STUB_AUDIT.md` — ONLY if traces reveal a
+  missed `sceMpeg*` or `sceIpu*` symbol.
+
+F. INCREMENTAL IMPLEMENTATION TASKS
+-----------------------------------
+1. Check FFmpeg dev availability on current host (`pkg-config --modversion
+   libavcodec libavformat libavutil libswscale libswresample`). If absent on
+   Linux, report clearly or verify whether user/environment permits installing
+   them; do NOT fake FMV playback with static/stub images!
+2. Rebuild with `-DROZU_ENABLE_FFMPEG=ON` (using cached `ROZU_GAME_CODE_LIBRARY`
+   unless `rozu.toml` changes).
+3. Run `rozu` with `ROZU_TRACE=BOOT,IOP,FILE,GAME,GS` and `PS2X_GS_RECORD`
+   through the first 900–1,800 NTSC fields (15–30 emulated seconds) to observe
+   `CP_LOGO.PSS`, warning/memcard check, and initial title screen.
+4. Inspect captured frames (`Tools/frame_report.py`, PNG inspection), GS trace
+   (`Tools/gstrace_summary.py`), and audio dump (`Tools/audio_check.py`).
+5. Isolate and fix the earliest video, FMV, timing, or IOP/audio blocker
+   generically; re-run `ctest` + M05 Gate G3 + M06 Gate G4a.
+
+G. EXPLICIT COMMANDS
+--------------------
+Linux (adjust target fields/timeout based on M05 measured boot timing):
+  mkdir -p build/test_artifacts/G4a
+  pkg-config --modversion libavcodec libavformat libavutil libswscale libswresample
+  cmake -S . -B build/linux -G Ninja -DROZU_ENABLE_FFMPEG=ON \
+    -DROZU_GAME_CODE_LIBRARY=build/linux/Port/librozu_game_code.a
+  cmake --build build/linux --target rozu
+  # Run 2 deterministic captures & compare VRAM hashes:
+  ROZU_HEADLESS=1 PS2X_GS_GPU=0 PS2X_MTVU=0 PS2X_VU1_RECOMP=0 \
+    ROZU_STOP_AFTER_FIELDS=1500 \
+    PS2X_GS_RECORD=build/test_artifacts/G4a/run1.gsr \
+    ./build/linux/bin/rozu --iso "Game/Rule of Rose (USA).iso" \
+    | tee build/test_artifacts/G4a/run1.log
+  python3 Tools/frame_report.py build/test_artifacts/G4a/run1.gsr \
+    | tee build/test_artifacts/G4a/frame_report.log
+
+H. ACCEPTANCE TESTS (PASS/FAIL THRESHOLDS)
+------------------------------------------
+1. Non-black verified video frames rendered on genuine guest execution (verified
+   by `Tools/frame_report.py` pixel stats & dumped PNGs under
+   `build/test_artifacts/G4a/`).
+2. `CP_LOGO.PSS` decodes real MPEG-2 frames and advances cleanly without stall.
+3. Dual-run `Tools/gsr_compare.py` reports 0 VRAM hash mismatches.
+4. `Tools/audio_check.py` (if audio emitted during logo/intro) records clean
+   48 kHz PCM without fatal SPU2 errors; document exact `RXSNDDRV` `libsd` call
+   profile (`sceSdVoiceTrans` vs `sceSdBlockTrans`) for M07.
+5. `ctest` (all engine unit tests) and M05 `rozu_boot_check.py` still PASS.
+
+I. PCSX2 / ORIGINAL BEHAVIOR COMPARISON METHOD
+----------------------------------------------
+Verify initial screen order matches retail NTSC-U `SLUS-21448`: Atlus /
+Punchline / Shirogumi logo (`CP_LOGO.PSS`) -> warning/copyright/loading ->
+title screen. If PCSX2 oracle is configured under `Emulator/`, compare a
+PCSX2 `.gs` dump of the logo/first screen against `run1.gsr` via `gs_replay`.
+
+J. FAILURE TRIAGE
+-----------------
+- If FFmpeg dev packages are missing on Linux and cannot be installed without
+  root/user action, STOP, document the exact missing packages and commands in
+  `handoff.txt`, and verify non-FMV boot progress honestly without marking G4a
+  passed.
+- If `CP_LOGO.PSS` renders green/corrupted chroma or freezes at frame 1, inspect
+  `Stubs/MPEG.cpp` CSC (`sceMpegGetPicture` RGB32/RAW8 output format) and IPU
+  DMA handshake; fix generically in `External/PS2Recomp` with a unit test.
+
+K. SAFETY + GIT COMMIT CHECKPOINT
+---------------------------------
+1. Check `git status --short`, `git diff --check`, `git submodule status`.
+2. Verify ZERO `.gsr`, `.png`, `.wav`, `.iso`, or `Port/generated/` files are
+   staged.
+3. Commit submodule (`rozu-port`) first if modified; then commit parent repo
+   staging ONLY approved files:
+     git commit -m "M06: verify CP_LOGO.PSS FMV playback and first rendered video/audio (G4a)"
+4. Report `git status --short`. No push.
+
+L. HANDOFF UPDATE INSTRUCTIONS
+------------------------------
+Update `./handoff.txt` with exact field numbers of logo start/end and first
+rendered screen, `RXSNDDRV` `libsd` ordinal trace (especially `sceSdBlockTrans`),
+FFmpeg build status, `build/test_artifacts/G4a/` paths, commit SHAs, and
+append-only progress log.
+
+M. STOP CONDITION
+-----------------
+STOP after M06 commit (or documented FFmpeg blocker) and `handoff.txt` update.
+Report files changed, G4a frame/FMV/audio evidence, commit SHA, remaining
+faults, and next step: `gemini_hydrogen/Gemini_Step_008.txt` (M07 — CONDITIONAL).
+================================================================================

@@ -1,0 +1,158 @@
+================================================================================
+GEMINI_STEP_009.TXT — MILESTONE M08 (GATE G5) [CONDITIONAL]
+NEW GAME START, OPENING CUTSCENE, SCENE LOADING & 3D WORLD INITIALIZATION
+================================================================================
+
+STATUS: CONDITIONAL — UNBLOCKED ONLY AFTER M07 (GATE G4) PASSES.
+All scene/world/player RAM observations MUST be measured from real M08 runtime
+traces; never copy SOTC addresses or fabricate loading checks!
+
+A. ROLE
+-------
+You are GEMINI HYDROGEN, the implementation and testing agent.
+
+B. OBJECTIVE & PREREQUISITES
+----------------------------
+Objective:
+  Drive genuine game-controlled progression from Main Menu -> `New Game` ->
+  opening FMV/cutscene (`MV01_OPE.PSS` / bus intro) -> loading screen
+  (`LOADING.BIN`) -> first playable 3D scene (`DATA/CH/00/CHAP00.RPK`,
+  `DATA/BG/MAPUNIT.BIN`, `DATA/SEQ/.../*.ARA`), proving Rule of Rose's `i3d`
+  3D engine, VU1 microprograms (`.vutext` 44 `MPG` packets), VIF/DMA chains,
+  and GS 3D rasterization initialize into an interactive world!
+
+Prerequisites:
+  - M07 (`Gemini_Step_008.txt`) committed with Gate G4 PASS.
+  - Working pad script to reach Main Menu recorded in `handoff.txt`.
+
+Acceptance Criteria (Gate G5):
+  - Scripted input selects `New Game` (and skips/completes intro FMV cleanly).
+  - Guest loads chapter/map archives (`CHAP00.RPK`, `MAPUNIT.BIN`, `.ARA`,
+    `LOADING.BIN`) via `cdrom0:` with zero missing guest functions, zero DMA/
+    VIF/VU1 faults, and zero infinite loading hangs.
+  - First playable 3D scene renders genuine non-black 3D geometry (verified PNG
+    captures + `Tools/frame_report.py`), AND left-stick movement input produces
+    measurable visual + guest RAM coordinate/state change (proving real player
+    control, NOT a stuck cutscene or menu image!).
+  - Discover and document the real Rule of Rose per-frame tick hook address &
+    frame counter address (so `rozu::watchdog` timeline and `debug_script` can
+    measure guest game-logic pacing authentically).
+
+C. READ FIRST
+-------------
+1. Read `./handoff.txt` completely.
+2. Read `architecture/rule_of_rose_binary_profile.md` (Section 2.2 `/DATA/`,
+   Section 3.2 `.vutext` 44 `MPG` packets) and `architecture/unknowns_and_risks.md`
+   (R5, R8, R10).
+
+D. EVIDENCE
+-----------
+CONFIRMED FACTS:
+- `.vutext` (`0x00291230..0x002953B0`, `0x4180` B) holds 44 VIF `MPG` packets
+  for the `i3d` renderer's VU1 microcode (`i3d_package_version 050121-stable-050826`).
+- Game archives on disc: `DATA/PREMIERE.RPK`, `DATA/CH/CHARA.RPK`,
+  `DATA/CH/00/CHAP00.RPK`, `DATA/BG/MAPUNIT.BIN`, `DATA/EFF/EFF.BIN`,
+  `DATA/WRD/WRD.BIN`, `DATA/CMNTEX/LOADING.BIN`, `DATA/SEQ/W*/A*/*.ARA`.
+- C++ classes verified in `.gnu.linkonce.t.*` / `.gnu.linkonce.d.*`:
+  `PLScenePlay`, `MagLifePC`, `DogActor`, `DogEntity`, `EmyManager`, `TskMovie`,
+  `TskSnd`, `TskSeqEvent`.
+
+UNKNOWN / TO MEASURE AT RUNTIME IN THIS STEP:
+- Exact VIF1 / VU1 microprogram upload & execution behavior of `i3d` on
+  `ps2xRuntime`'s VU1 interpreter.
+- Whether Rule of Rose's disc streaming requires a cycle-accurate `sceCdRead`
+  timing wrapper (`Port/src/rozu/hle/disc_timing.cpp`) or works cleanly with
+  `ps2_stubs::sceCdRead`.
+- Exact guest RAM address of the per-frame game update counter and Jennifer
+  (`MagLifePC`) world position (measurable via `Tools/find_walk_delta.py`!).
+
+E. FILE-LEVEL IMPLEMENTATION SCOPE
+----------------------------------
+EDIT / CREATE (only as evidenced by real M08 runtime traces):
+- `Tools/rozu_newgame_check.py` — automated Gate G5 test: boots from cold start
+  (or menu save-state), selects `New Game`, advances through intro cutscene &
+  loading into first playable scene, sends walk input, saves quick-state
+  (`build/test_artifacts/G5/gameplay_start.state`), verifies 3D frame changes
+  and RAM walk delta (`Tools/find_walk_delta.py`), and checks 0 crashes/hangs.
+- `Port/src/rozu/hle/disc_timing.{h,cpp}` — ONLY if runtime traces prove a disc
+  read race condition under instant ISO reads (model NTSC 60 Hz / EE-cycle DVD
+  timing cleanly with save-state extension).
+- `Tools/ror_prepare.py` / `Port/recomp/rozu.toml` — ONLY if new gameplay code
+  paths hit a previously unexercised indirect-call target (`MissingFunctionPolicy::Stop`).
+- `External/PS2Recomp` (branch `rozu-port`) — ONLY for genuine generic VU0/VU1,
+  VIF1, DMA, GS, MPEG, or IOP fixes, accompanied by unit tests.
+
+F. INCREMENTAL IMPLEMENTATION TASKS
+-----------------------------------
+1. Run deterministic scripted `New Game` boot with `ROZU_TRACE=BOOT,FILE,GAME,IOP`
+   and `PS2X_GS_GPU=0`, `PS2X_MTVU=0`, `PS2X_VU1_RECOMP=0` (timeout 600 s).
+2. Triage every real fault in chronological order:
+   - Missing indirect function target -> fix discovery in `Tools/ror_prepare.py`;
+   - `MV01_OPE.PSS` FMV stall/audio issue -> fix generically in `Stubs/MPEG.cpp`
+     or `iop_spu2.cpp`;
+   - Loading screen (`LOADING.BIN`) hang -> trace `sceCdRead`/`sceCdSync`/IOP
+     threads and add `disc_timing` ONLY if proven necessary;
+   - 3D rendering / VU1 / GS artifact -> capture `.gsr` & `PS2X_VU1_CAPTURE`,
+     inspect with `Tools/gstrace_summary.py`, fix generically.
+3. Once playable 3D control is reached, save a `.state` before and after holding
+   left-stick forward for 60 fields, run `Tools/find_walk_delta.py` to identify
+   Jennifer's real world-position coordinates, and verify movement visibly and
+   numerically!
+4. Identify a verified per-frame function (e.g., inside `PLScenePlay`) and record
+   its address in `handoff.txt` for `ROZU_TIMELINE_HOOK` / `ROZU_DEBUG_HOOK`.
+
+G. EXPLICIT COMMANDS
+--------------------
+Linux:
+  mkdir -p build/test_artifacts/G5
+  cmake --build build/linux --target rozu
+  python3 Tools/rozu_newgame_check.py \
+    --exe build/linux/bin/rozu \
+    --iso "Game/Rule of Rose (USA).iso" \
+    --out build/test_artifacts/G5 | tee build/test_artifacts/G5/newgame_check.log
+
+H. ACCEPTANCE TESTS (PASS/FAIL THRESHOLDS)
+------------------------------------------
+1. `Tools/rozu_newgame_check.py` exits `0` within 600 s timeout:
+   - `New Game` selected, `MV01_OPE.PSS` + `CHAP00.RPK` + `MAPUNIT.BIN` loaded;
+   - Rendered 3D scene frames are non-black and visually valid (PNGs saved);
+   - Walk input causes measurable frame change AND verified `find_walk_delta.py`
+     coordinate movement in EE RDRAM;
+   - **0** crashes, **0** missing guest branch targets, **0** loading freezes.
+2. Regression check: `ctest` and Gate G4 (`Tools/rozu_menu_check.py`) still PASS.
+
+I. PCSX2 / ORIGINAL BEHAVIOR COMPARISON METHOD
+----------------------------------------------
+Verify opening sequence matches retail `SLUS-21448` (bus/street opening ->
+first controllable exterior/orphanage scene, Jennifer visible, fixed camera
+angles working). If PCSX2 oracle is configured, compare a PCSX2 GS dump and
+PINE RAM dump of the first playable room against native output.
+
+J. FAILURE TRIAGE
+-----------------
+- Minimize to the earliest failing field; use `PS2X_STATE_SAVE_AT` right before
+  the failure to iterate in seconds instead of rebooting from field 0.
+- Never fake G5 by accepting a loading screen or menu frame as "gameplay".
+
+K. SAFETY + GIT COMMIT CHECKPOINT
+---------------------------------
+1. Check `git status --short`, `git diff --check`, `git submodule status`.
+2. Verify ZERO `.state`, `.gsr`, `.png`, `.iso`, or `Port/generated/` files
+   are staged.
+3. Commit `External/PS2Recomp` first if modified, then commit parent repo with
+   ONLY approved files:
+     git commit -m "M08: pass G5 New Game, opening cutscene, and 3D world initialization"
+4. Report `git status --short`. No push.
+
+L. HANDOFF UPDATE INSTRUCTIONS
+------------------------------
+Update `./handoff.txt` with Gate G5 PASS evidence, verified per-frame hook PC,
+verified player coordinate RAM addresses, any VU1/GS/MPEG fixes, commit SHAs,
+and append-only progress log.
+
+M. STOP CONDITION
+-----------------
+STOP after M08 commit and `handoff.txt` update.
+Report files changed, G5 New Game/world-init evidence, commit SHA, remaining
+faults, and next step: `gemini_hydrogen/Gemini_Step_010.txt` (M09 — CONDITIONAL).
+================================================================================

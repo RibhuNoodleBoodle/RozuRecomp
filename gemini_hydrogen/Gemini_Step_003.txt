@@ -1,0 +1,188 @@
+================================================================================
+GEMINI_STEP_003.TXT — MILESTONE M02 (GATE G1a)
+RULE OF ROSE ISO VALIDATOR, VERIFIED PROFILE, AND GAME_DISC MODULE
+================================================================================
+
+A. ROLE
+-------
+You are GEMINI HYDROGEN, the implementation and testing agent.
+
+B. OBJECTIVE & PREREQUISITES
+----------------------------
+Objective:
+  Implement Rule of Rose (`SLUS-21448` v1.00) disc identity verification across
+  both Python tooling and native C++ runtime:
+  1. Create `Port/profile/SLUS-21448_v1.00.json` with all verified disc,
+     `SYSTEM.CNF`, `SYSTEM.INI`, `IOPCONF.CNF`, `SLUS_214.48`, and `/MODULES/*`
+     SHA-256 hashes;
+  2. Implement `Tools/ror_prepare.py` (Phase 1: ISO9660 verification, negative
+     rejection of wrong/corrupted ISOs, `SLUS_214.48` extraction to git-ignored
+     `build/prepare/`, and `rozu_layout_generated.h` header generation);
+  3. Implement `Port/src/rozu/game_disc.{h,cpp}` verifying the mounted ISO at
+     runtime via `PS2CdImage` and `Sha256::hex`, plus automated positive and
+     negative tests against `Game/Rule of Rose (USA).iso`.
+
+Prerequisites:
+  - M01 (`Gemini_Step_002.txt`) committed on `rozu/port-bringup` (Gate G0b PASS).
+
+Acceptance Criteria (Gate G1a):
+  - `Tools/ror_prepare.py --validate-only` exits `0` on `Game/Rule of Rose (USA).iso`
+    and verifies all 13 file hashes (`SYSTEM.CNF`, `SYSTEM.INI`, `IOPCONF.CNF`,
+    `SLUS_214.48`, and all 9 `IOPCONF.CNF` IOP modules).
+  - Negative test (corrupted/fake ISO file) exits non-zero with clear error text
+    naming `SLUS-21448 v1.00` and expected vs actual SHA-256.
+  - Native C++ test (`rozu_disc_test`) mounts `Game/Rule of Rose (USA).iso` via
+    `rozu::verifyDiscAndPrepare()`, passes all SHA-256 checks, rejects a bogus
+    file cleanly, and writes cached `SLUS_214.48` ONLY into git-ignored temp dir.
+  - `git status` confirms zero extracted game binaries are tracked or untracked
+    outside git-ignored directories.
+
+C. READ FIRST
+-------------
+1. Read `./handoff.txt` completely.
+2. Read `architecture/rule_of_rose_binary_profile.md` (Sections 1, 2, 4 — exact
+   verified SHA-256 hashes, LBAs, and sizes) and `architecture/decisions.md`
+   (ADR-001, ADR-002).
+3. Consult `Tools/iso9660.py` and `External/PS2Recomp/ps2xRuntime/include/runtime/ps2_cd_image.h`.
+
+D. EVIDENCE
+-----------
+CONFIRMED FACTS (from `architecture/rule_of_rose_binary_profile.md` — VERIFIED):
+- Disc: `SLUS-21448`, Rule of Rose (USA, NTSC-U), v1.00
+  - Size: `3393454080` bytes (`1656960` sectors x `2048` B)
+  - MD5: `54e6990f5ed6e0d5b03b6ca7655b7cec` (Redump exact match)
+  - SHA-256: `95ff5d1298b1bb19443098852c95c42886605f01fb1ffa8d823ff496598989e9`
+- Boot ELF: `SLUS_214.48` (size `2296472`, entry `0x00100008`, `_gp = 0x0030FFF0`,
+  `.text = 0x00100000..0x00280E88`, `.vutext = 0x00291230..0x002953B0`,
+  SHA-256 `262efe713ad2432d4e8b2122a5edae9302b7f9eb900537b76beae064a4a91af3`)
+- Verified disc files (all SHA-256 verified):
+  - `SYSTEM.CNF`             (57 B):     `93843e865293ca2e06bd849262db9a724615bd16c9628bcaebdf6c14cf7baee1`
+  - `SYSTEM.INI`             (176 B):    `7f1f312a02cfb6245e9d51937138a199c75c59c33016c1b869d56071da02f41c`
+  - `IOPCONF.CNF`            (323 B):    `699d70c00ffc5afe9ebd4df116d20df4b3a3d88aaf1dd0317bc35edae43eea38`
+  - `MODULES/IOPRP300.IMG`   (275345 B): `02d314464c17c715d7e809297b0aba184173a98616b1fafeac27fe33fc480c82`
+  - `MODULES/SIO2MAN.IRX`    (6641 B):   `565ec77e75f174cfddf72c41ccc446c1c07a3d5fb0a2ccfefad337cb8a7d0728`
+  - `MODULES/SIO2D.IRX`      (11289 B):  `b07339d0b6ef6021ebb2bd8dba1138f3159b2cdfbf1b29df799694107107d330`
+  - `MODULES/DBCMAN.IRX`     (15653 B):  `60bfea7d0877df3af370676666e5f1043b6e71723fab94cdff790c19e75e12e7`
+  - `MODULES/PAD2/DS1O_D.IRX`(10469 B):  `ba65aefc36ef49fc2c31b979aef628cf304561c421b817d3734aee066082937c`
+  - `MODULES/MCMAN.IRX`      (96181 B):  `b4df4061f8fdc9c7cf06a329b96227ad6ca69d008df475c1fc4d3e8d06fe3fa4`
+  - `MODULES/MCSERV.IRX`     (7385 B):   `5006b0dd650fa416d03a559bc8e3bae8a7ae95be81f3e4f3fd9bd524fa27e000`
+  - `MODULES/LIBSD.IRX`      (30085 B):  `94915a3d9673e8a370e144ae493552d5e1f3956bb9ae5bd91e2da5f36c83ce7d`
+  - `MODULES/RXSNDDRV.IRX`   (74005 B):  `64d6f26c796fc2599b4fffee94744288d2603cf376041a9f8b25dc538aea67fc`
+
+E. FILE-LEVEL IMPLEMENTATION SCOPE
+----------------------------------
+CREATE:
+- `Port/profile/SLUS-21448_v1.00.json` — clean JSON profile (NO XFF fields;
+  includes `serial`, `title`, `region`, `version`, `vmode`, `disc`, `boot_elf`,
+  `vutext_exclude`, and `required_files` array for CNF/INI/IRX checks).
+- `Tools/ror_prepare.py` — Phase 1 implementation:
+  - Parses `--profile`, `--iso`, `--out`, `--emit-header`, `--validate-only`,
+    `--verify-full-disc-sha256` (optional slow 3.2 GB full-ISO hash check; fast
+    default checks exact disc byte size + PVD + all 13 internal file SHA-256s).
+  - Asserts `SLUS_214.48` is ELF32 LE MIPS `ET_EXEC`, `e_entry == 0x00100008`,
+    and has **zero** `SHT_REL`/`SHT_RELA` sections (ADR-002).
+  - Emits `rozu_layout_generated.h` in `namespace rozu::generated` (serial,
+    version, discSize, bootElfPath, bootElfSha256, bootEntry, gpValue,
+    vutextStart, vutextEnd, `kRequiredFiles[]`).
+- `Port/src/rozu/game_disc.{h,cpp}` — uses `PS2CdImage` & `Sha256::hex` to
+  discover (`findDiscImage`) and verify (`verifyDiscAndPrepare`) `SYSTEM.CNF`,
+  `SLUS_214.48`, and every entry in `kRequiredFiles[]`, caching `SLUS_214.48`
+  into `cacheDir` (git-ignored `game_data/`). Note: normalize paths cleanly for
+  `PS2CdImage::find()` (check whether `PS2CdImage` expects `/` or `\` or `;1`!).
+- `Port/tests/rozu_disc_test.cpp` — positive test on `Game/Rule of Rose (USA).iso`
+  (skipped cleanly with non-pass notice only if `--iso` omitted; MUST run with
+  the local ISO here!) + negative test on a synthetic 64 KB dummy file.
+
+EDIT:
+- `Port/CMakeLists.txt` — add `game_disc.cpp` to `rozu_host_lib` (using a
+  profile-generated or build-dir `rozu_layout_generated.h` header so `game_disc`
+  builds and tests cleanly in M02 even before `ps2_recomp` runs in M04!) and add
+  `rozu_disc_test` target.
+
+LEAVE ALONE:
+- `External/PS2Recomp`, `Game/Rule of Rose (USA).iso`.
+
+F. INCREMENTAL IMPLEMENTATION TASKS
+-----------------------------------
+1. Write `Port/profile/SLUS-21448_v1.00.json` using the exact verified values in D.
+2. Write `Tools/ror_prepare.py` (Phase 1 validator + ELF structural assertions +
+   `rozu_layout_generated.h` emitter). Keep modular structure so M03 cleanly adds
+   function discovery and `ps2xAnalyzer` integration without rewriting Phase 1.
+3. Run `Tools/ror_prepare.py` on `Game/Rule of Rose (USA).iso` (both fast check
+   and `--verify-full-disc-sha256`), plus a negative test on a dummy file.
+4. Inspect `External/PS2Recomp/ps2xRuntime/src/lib/ps2_cd_image.cpp` to verify
+   exact subdirectory lookup conventions (`MODULES/PAD2/DS1O_D.IRX` vs backslash).
+5. Implement `Port/src/rozu/game_disc.{h,cpp}` and `Port/tests/rozu_disc_test.cpp`.
+6. Build `rozu_disc_test` and execute both positive and negative tests.
+
+G. EXPLICIT COMMANDS
+--------------------
+Linux:
+  mkdir -p build/test_artifacts/G1a build/prepare
+  python3 Tools/ror_prepare.py \
+    --profile Port/profile/SLUS-21448_v1.00.json \
+    --iso "Game/Rule of Rose (USA).iso" \
+    --out build/prepare \
+    --emit-header build/prepare/rozu_layout_generated.h \
+    --validate-only | tee build/test_artifacts/G1a/prepare_valid.log
+  # Negative test (must fail non-zero):
+  dd if=/dev/zero of=build/test_artifacts/G1a/fake.iso bs=1024 count=64 2>/dev/null
+  python3 Tools/ror_prepare.py \
+    --profile Port/profile/SLUS-21448_v1.00.json \
+    --iso build/test_artifacts/G1a/fake.iso \
+    --out build/prepare --validate-only \
+    > build/test_artifacts/G1a/prepare_negative.log 2>&1; echo "NEG_EXIT=$?"
+  # Build & run C++ disc verifier test:
+  cmake --build build/linux --target rozu_disc_test
+  ./build/linux/Port/rozu_disc_test \
+    --iso "Game/Rule of Rose (USA).iso" \
+    --bad-iso build/test_artifacts/G1a/fake.iso \
+    --cache-dir build/test_artifacts/G1a/cache | tee build/test_artifacts/G1a/disc_test.log
+
+H. ACCEPTANCE TESTS (PASS/FAIL THRESHOLDS)
+------------------------------------------
+1. `ror_prepare.py` on `Game/Rule of Rose (USA).iso` exits `0`, confirming all
+   13 SHA-256 hashes match, `e_entry == 0x00100008`, and `0` relocation sections.
+2. `ror_prepare.py` on `fake.iso` exits non-zero (`NEG_EXIT != 0`) with clear
+   diagnostic mentioning `SLUS-21448`.
+3. `rozu_disc_test` exits `0`: PASS on valid ISO (all 13 files verified via
+   `PS2CdImage` including nested `MODULES/PAD2/DS1O_D.IRX`), PASS rejecting
+   `fake.iso`, and extracted cached `SLUS_214.48` matches expected SHA-256.
+4. `git status --short` confirms `build/` and cached `SLUS_214.48` are ignored.
+
+I. PCSX2 / ORIGINAL BEHAVIOR COMPARISON METHOD
+----------------------------------------------
+All 13 hashes and Redump disc MD5 (`54e6990f5ed6e0d5b03b6ca7655b7cec`) match
+the verified retail NTSC-U `SLUS-21448` v1.00 disc byte-for-byte.
+
+J. FAILURE TRIAGE
+-----------------
+- If `PS2CdImage::find("MODULES/PAD2/DS1O_D.IRX")` fails due to path separator
+  or `;1` suffix handling in `ps2_cd_image.cpp`, verify `ps2_cd_image.cpp`
+  normalization rules; fix path formatting in `game_disc.cpp` (or fix generic
+  case/slash handling in `ps2_cd_image.cpp` with a unit test if `PS2CdImage`
+  itself has a bug).
+
+K. SAFETY + GIT COMMIT CHECKPOINT
+---------------------------------
+1. Check `git status --short`, branch `rozu/port-bringup`, `git diff --check`.
+2. Verify ZERO `.iso`, `SLUS_214.48`, `.irx`, or `build/` files are staged.
+3. Stage ONLY approved files:
+     git add Port/profile/SLUS-21448_v1.00.json Tools/ror_prepare.py \
+       Port/src/rozu/game_disc.h Port/src/rozu/game_disc.cpp \
+       Port/tests/rozu_disc_test.cpp Port/CMakeLists.txt handoff.txt
+4. Commit:
+     git commit -m "M02: add SLUS-21448 profile, ISO validator, and game_disc verification"
+5. Report exact `git status --short`. No push.
+
+L. HANDOFF UPDATE INSTRUCTIONS
+------------------------------
+Update `./handoff.txt` with M02 commit SHA, test logs (`build/test_artifacts/G1a/`),
+any `PS2CdImage` path conventions discovered, and append-only progress entry.
+
+M. STOP CONDITION
+-----------------
+STOP after M02 commit and `handoff.txt` update.
+Report files changed, positive/negative validator results, `rozu_disc_test`
+output, commit SHA, and next step: `gemini_hydrogen/Gemini_Step_004.txt` (M03).
+================================================================================

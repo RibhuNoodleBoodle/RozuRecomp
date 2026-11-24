@@ -1,0 +1,145 @@
+================================================================================
+GEMINI_STEP_010.TXT — MILESTONE M09 (GATE G6) [CONDITIONAL]
+FIRST 10 MINUTES OF GENUINE CONTROLLABLE GAMEPLAY & SAVE-STATE STABILITY
+================================================================================
+
+STATUS: CONDITIONAL — UNBLOCKED ONLY AFTER M08 (GATE G5) PASSES.
+Do NOT declare G6 achieved from a short walk or static idle loop; it requires
+>= 10 minutes (~36,000 NTSC fields) of genuine interactive progression!
+
+A. ROLE
+-------
+You are GEMINI HYDROGEN, the implementation and testing agent.
+
+B. OBJECTIVE & PREREQUISITES
+----------------------------
+Objective:
+  Prove sustained stability and gameplay fidelity across the **first 10+ minutes
+  (>= 36,000 NTSC fields)** of actual controllable Rule of Rose gameplay:
+  walking, running, examining/picking up items, opening doors / room transitions
+  (`.ARA` streaming), inventory/pause menus, fixed camera transitions, meeting/
+  interacting with Brown (`DogActor` / `MagLifePCModeDog*`), plus deterministic
+  `F5`/`F9` save-state round-trip verification.
+
+Prerequisites:
+  - M08 (`Gemini_Step_009.txt`) committed with Gate G5 PASS.
+  - Verified per-frame hook PC & player coordinate addresses in `handoff.txt`.
+
+Acceptance Criteria (Gate G6):
+  - >= 36,000 continuous NTSC fields (~10 minutes of emulated gameplay) executed
+    without a single crash, freeze (> 300 fields without guest logic counter
+    advancing), missing branch target, or fatal IOP/audio deadlock.
+  - Genuine interactive progression across multiple rooms/doors, item pickup,
+    inventory open/close, and dialogue/cutscene triggers (logged via timeline +
+    contact sheet screenshots every N fields).
+  - Save-state round-trip check (`Tools/rozu_state_check.py`): save `.state` mid-
+    gameplay, reload in a fresh `rozu` process, run 100 deterministic fields, and
+    confirm 100% identical VRAM hashes and RAM checkpoint!
+  - Audio remains coherent across room transitions with no fatal underrun/hang.
+
+C. READ FIRST
+-------------
+1. Read `./handoff.txt` completely.
+2. Read `architecture/build_and_test_strategy.md` (Gate G6) and
+   `architecture/unknowns_and_risks.md` (R7, R8, R10).
+
+D. EVIDENCE
+-----------
+CONFIRMED FACTS:
+- Verified game subsystems in `SLUS_214.48`: `MagLifePC` (modes: `Run2D`,
+  `Turn`, `Item`, `Damage`, `Hold`, `Attacking`, `DogGo`, `DogCome`, `DogStay`),
+  `DogActor` (`Brown`), `TskSeqEvent`, `door_obj.bin`, `A*.ARA` room files.
+- `ps2xRuntime` provides full bidirectional save-state serialization (`ps2x::savestate`)
+  covering EE, VU0/VU1, GS, scheduler, IOP, SIO2, SPU2, VFS, and HLE extensions.
+
+UNKNOWN / TO VERIFY AT RUNTIME:
+- Whether room transitions (`.ARA` / `MAPUNIT.BIN` streaming), dialogue boxes,
+  item/inventory overlays, or `DogActor` AI trigger new `jalr` targets, GS
+  blending/alpha modes, or `RXSNDDRV` `XVAB`/`XSEQ` edge cases.
+- Whether `rozu::hle::disc_timing` (if added in M08) serializes properly inside
+  `ps2x::savestate` without desyncing on reload.
+
+E. FILE-LEVEL IMPLEMENTATION SCOPE
+----------------------------------
+CREATE / EDIT:
+- `Tools/rozu_gameplay_10min.py` — scripted 36,000-field gameplay soak & contact-
+  sheet harness (records timeline, guest logic ticks vs host FPS, non-black frame
+  ratios, audio metrics, room/door progression, and stall detection).
+- `Tools/rozu_state_check.py` — save-state determinism round-trip verifier
+  (save -> fresh process load -> 100-field VRAM hash equivalence).
+- Targeted fixes ONLY where real M09 gameplay faults occur:
+  - Function discovery in `Tools/ror_prepare.py` (if new `jalr` target seen);
+  - Generic EE/VU/GS/IOP/SPU2/SaveState fixes in `External/PS2Recomp` (branch
+    `rozu-port`, with unit tests).
+
+F. INCREMENTAL IMPLEMENTATION TASKS
+-----------------------------------
+1. Play / script through the opening 10 minutes (bus/orphanage exterior ->
+   interior rooms -> Brown/item interactions -> inventory/pause) while capturing
+   timeline, periodic frames, and audio logs.
+2. Triage every crash, hang, rendering glitch, or missing indirect call
+   generically; verify no hardcoded workarounds or fake stubs are introduced.
+3. Run `Tools/rozu_state_check.py` (deterministic CPU-GS mode) to confirm `F5`/
+   `F9` save-state round-trip matches VRAM hashes bit-for-bit.
+4. Run full 36,000-field `Tools/rozu_gameplay_10min.py` soak test and collect
+   full report JSON + contact sheet under `build/test_artifacts/G6/`.
+
+G. EXPLICIT COMMANDS
+--------------------
+Linux:
+  mkdir -p build/test_artifacts/G6
+  cmake --build build/linux --target rozu
+  python3 Tools/rozu_state_check.py \
+    --exe build/linux/bin/rozu --iso "Game/Rule of Rose (USA).iso" \
+    --out build/test_artifacts/G6/state | tee build/test_artifacts/G6/state_check.log
+  python3 Tools/rozu_gameplay_10min.py \
+    --exe build/linux/bin/rozu --iso "Game/Rule of Rose (USA).iso" \
+    --fields 36000 --timeout 1200 \
+    --out build/test_artifacts/G6/soak | tee build/test_artifacts/G6/soak.log
+
+H. ACCEPTANCE TESTS (PASS/FAIL THRESHOLDS)
+------------------------------------------
+1. `Tools/rozu_state_check.py` exits `0` (100% VRAM hash match after fresh-
+   process save-state load).
+2. `Tools/rozu_gameplay_10min.py` exits `0`:
+   - >= 36,000 NTSC fields completed;
+   - Longest guest logic stall <= 300 fields;
+   - >= 90% active gameplay frames non-black;
+   - Multiple room/scene IDs and player coordinates visited;
+   - **0** crashes, **0** missing branch targets, **0** fatal IOP/SPU2 errors.
+3. Earlier gates (ctest, G4, G5) remain PASS.
+
+I. PCSX2 / ORIGINAL BEHAVIOR COMPARISON METHOD
+----------------------------------------------
+Verify movement speed, camera cuts, door transitions, inventory UI, dialogue
+text rendering, and audio cues match retail NTSC-U `SLUS-21448`. When PCSX2
+oracle is available, compare RAM/GS captures at matched room checkpoints.
+
+J. FAILURE TRIAGE
+-----------------
+- Use `ROZU_WATCHDOG=10` and `PS2X_STATE_SAVE_AT` just prior to any stall or
+  graphical bug to create a < 5 s minimal reproducer before debugging.
+- Separate rendering speed from guest timing: if CPU-GS runs slower than real
+  time on Linux, verify guest NTSC 60 Hz logic cadence is intact (optimization
+  belongs in M12!).
+
+K. SAFETY + GIT COMMIT CHECKPOINT
+---------------------------------
+1. Check `git status --short`, `git diff --check`, `git submodule status`.
+2. Verify ZERO `.state`, `.gsr`, `.png`, `.wav`, or `Port/generated/` files staged.
+3. Commit submodule first if changed; then stage ONLY approved parent files:
+     git commit -m "M09: pass G6 10-minute interactive gameplay soak and save-state verification"
+4. Report `git status --short`. No push.
+
+L. HANDOFF UPDATE INSTRUCTIONS
+------------------------------
+Update `./handoff.txt` with Gate G6 PASS metrics (fields completed, guest vs
+host FPS, max stall, rooms visited, save-state round-trip result), commit SHAs,
+and append-only progress log.
+
+M. STOP CONDITION
+-----------------
+STOP after M09 commit and `handoff.txt` update.
+Report files changed, G6 soak + save-state evidence, commit SHA, remaining
+faults, and next step: `gemini_hydrogen/Gemini_Step_011.txt` (M10 — CONDITIONAL).
+================================================================================

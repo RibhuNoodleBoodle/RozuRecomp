@@ -1,0 +1,120 @@
+================================================================================
+GEMINI_STEP_012.TXT — MILESTONE M11 (GATE G8a) [CONDITIONAL]
+EXTENDED PLAYTHROUGH, MULTI-CHAPTER SCENARIO HARNESS & FULL-GAME COVERAGE
+================================================================================
+
+STATUS: CONDITIONAL — UNBLOCKED ONLY AFTER M10 (GATE G7) PASSES.
+Do NOT declare full-game playability until every chapter and ending path has
+actually been tested and measured!
+
+A. ROLE
+-------
+You are GEMINI HYDROGEN, the implementation and testing agent.
+
+B. OBJECTIVE & PREREQUISITES
+----------------------------
+Objective:
+  Expand verification from early chapters to broad / full-game Rule of Rose
+  coverage across all 13 chapters (`CHAP00.RPK` .. `CHAP12.RPK`), boss fights,
+  all major `.PSS` FMV cutscenes (including `MV00_ED.PSS` / `MV00_GD.PSS` /
+  `MV00_GED.PSS`), and puzzle/inventory/Brown tracking scenarios via a dedicated
+  Rule of Rose automated scenario harness (`Tools/rozu_scenario.py`).
+
+Prerequisites:
+  - M10 (`Gemini_Step_011.txt`) committed with Gate G7 PASS.
+
+Acceptance Criteria (Gate G8a):
+  - `Tools/rozu_scenario.py` exercises chapter checkpoints across the game
+    (`CHAP00` through `CHAP12` + boss encounters + ending FMVs) using isolated
+    memory card copies, producing `report.md`, `report.json`, and contact sheets.
+  - Every discovered indirect-call target (`jalr`), boss VU1 microprogram,
+    unique GS effect, and `.PSS` movie encountered across chapters runs with
+    **0 crashes**, **0 missing branch targets**, and **0 fatal hangs**.
+  - Honest compatibility table (`Docs/COMPATIBILITY.md`) documents exact tested
+    chapters, pass/fail status, and any remaining minor audio/visual quirks.
+
+C. READ FIRST
+-------------
+1. Read `./handoff.txt` completely.
+2. Read `architecture/build_and_test_strategy.md` (Gate G8) and `Docs/SDK_STUB_AUDIT.md`.
+
+D. EVIDENCE
+-----------
+CONFIRMED FACTS:
+- Disc contains 13 chapter packs (`DATA/CH/00/CHAP00.RPK` .. `12/CHAP12.RPK`),
+  41 `.PSS` movies (`CP_LOGO.PSS`, `DEATH_J.PSS`, `MV00_*`..`MV11_*`), and 44
+  VU microcode `MPG` packets in `.vutext`.
+- `Port/src/rozu/debug_script.cpp` supports scripted field-triggered peeks,
+  pokes, saves, loads, and guest function calls for automated scenario testing.
+
+E. FILE-LEVEL IMPLEMENTATION SCOPE
+----------------------------------
+CREATE / EDIT:
+- `Tools/rozu_scenario.py` — Rule of Rose multi-chapter automated test runner
+  (isolated exe/memcard working dirs, timeout/stall/black-frame/missing-branch
+  detection, `report.md`, `report.json`, PNG contact sheets).
+- `Docs/COMPATIBILITY.md` — honest chapter-by-chapter & subsystem test matrix
+  strictly distinguishing `tested-pass`, `known-quirk`, and `untested`.
+- Generic engine fixes in `External/PS2Recomp` (branch `rozu-port` + unit tests)
+  and function-discovery fixes in `Tools/ror_prepare.py` for any late-game
+  code paths uncovered.
+
+F. INCREMENTAL IMPLEMENTATION TASKS
+-----------------------------------
+1. Build `Tools/rozu_scenario.py` driven by verified chapter save-states or
+   memory-card saves (all private states/cards stay git-ignored under `build/`!).
+2. Run scenario sweeps across early, mid, and late chapters + boss battles +
+   all `.PSS` FMV transitions.
+3. Fix every crash, missing guest function, GS/VU1 rendering defect, or SPU2/
+   MPEG issue generically; add regression unit tests where appropriate.
+4. Re-run Gates G4–G7 after fixes to guarantee zero regressions.
+5. Write honest `Docs/COMPATIBILITY.md` backed by `build/test_artifacts/G8a/report.json`.
+
+G. EXPLICIT COMMANDS
+--------------------
+Linux:
+  mkdir -p build/test_artifacts/G8a
+  cmake --build build/linux --target rozu ps2x_tests ps2_iop_emulator_tests
+  ctest --test-dir build/linux --output-on-failure | tee build/test_artifacts/G8a/ctest.log
+  python3 Tools/rozu_scenario.py \
+    --exe build/linux/bin/rozu --iso "Game/Rule of Rose (USA).iso" \
+    --out build/test_artifacts/G8a | tee build/test_artifacts/G8a/scenario.log
+
+H. ACCEPTANCE TESTS (PASS/FAIL THRESHOLDS)
+------------------------------------------
+1. `Tools/rozu_scenario.py` exits `0` across all configured chapter scenarios
+   with 0 crashes, 0 missing branch targets, and 0 freezes > 300 fields.
+2. `Docs/COMPATIBILITY.md` accurately matches `report.json` with zero inflated
+   claims.
+3. `ctest` and Gates G4–G7 remain PASS.
+
+I. PCSX2 / ORIGINAL BEHAVIOR COMPARISON METHOD
+----------------------------------------------
+Spot-check late-game cutscenes, boss arenas, and visual effects (fog, lighting,
+subtitles over FMVs) against retail `SLUS-21448` expectations and PCSX2 oracle
+captures when available.
+
+J. FAILURE TRIAGE
+-----------------
+- Isolate any late-chapter crash with `PS2X_STATE_SAVE_AT` and `ROZU_TRACE`;
+  check whether an unexercised vtable/callback target was missed in M03.
+
+K. SAFETY + GIT COMMIT CHECKPOINT
+---------------------------------
+1. Check `git status --short`, `git diff --check`, `git submodule status`.
+2. Verify ZERO saves, states, screenshots, or `Port/generated/` files staged.
+3. Commit submodule first if changed; then commit approved parent files:
+     git commit -m "M11: add multi-chapter scenario harness and extended gameplay coverage (G8a)"
+4. Report `git status --short`. No push.
+
+L. HANDOFF UPDATE INSTRUCTIONS
+------------------------------
+Update `./handoff.txt` with chapters verified, `report.json` summary, any late-
+game fixes, commit SHAs, and append-only progress log.
+
+M. STOP CONDITION
+-----------------
+STOP after M11 commit and `handoff.txt` update.
+Report files changed, G8a scenario results, commit SHA, known remaining quirks,
+and next step: `gemini_hydrogen/Gemini_Step_013.txt` (M12 — CONDITIONAL).
+================================================================================

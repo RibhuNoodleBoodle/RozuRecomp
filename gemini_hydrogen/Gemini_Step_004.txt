@@ -1,0 +1,227 @@
+================================================================================
+GEMINI_STEP_004.TXT — MILESTONE M03 (GATE G1b)
+SLUS_214.48 FUNCTION DISCOVERY, .VUTEXT EXCLUSION, GPL SDK STUB AUDIT & ROZU.TOML
+================================================================================
+
+A. ROLE
+-------
+You are GEMINI HYDROGEN, the implementation and testing agent.
+
+B. OBJECTIVE & PREREQUISITES
+----------------------------
+Objective:
+  Prove a complete, clean-room GPL-3.0 ELF analysis & function-discovery pipeline
+  for `SLUS_214.48` (with ZERO reliance on `notmanrivera/ruleofrose-decomp` code
+  or symbol tables!) by:
+  1. Extending `Tools/ror_prepare.py` to discover ALL EE R5900 functions across
+     `.text` (`0x00100000..0x00280E88`) AND all 1,449 `.gnu.linkonce.t.*`
+     sections while STRICTLY EXCLUDING `.vutext` (`0x00291230..0x002953B0`);
+  2. Running `External/PS2Recomp`'s own GPL `ps2xAnalyzer` on `SLUS_214.48` to
+     recover stripped Sony SDK 3.0x symbols (`sceSif*`, `sceCd*`, `sceOpen/Read/
+     Write/Close/Lseek`, `sceMpeg*`, `sceIpu*`, `sceMc*`, `scePad2*`, `scePrintf`);
+  3. Independently verifying EVERY candidate SDK stub address (via SIF RPC server
+     IDs, syscall numbers, and nearby SDK strings) before listing it in
+     `Port/recomp/rozu.toml`;
+  4. Emitting `build/prepare/slus_21448_annotated.elf` (with `.symtab`/`.strtab`
+     populated and `.vutext` marked non-executable `A` so `ps2_recomp` never
+     disassembles VU microcode as EE code), `build/prepare/rozu_functions.csv`,
+     `Analysis/ADDRESS_MAP.generated.csv`, and `Port/recomp/rozu.toml`.
+
+Prerequisites:
+  - M02 (`Gemini_Step_003.txt`) committed on `rozu/port-bringup` (Gate G1a PASS).
+  - `ps2xAnalyzer` binary built in `build/linux/`.
+
+Acceptance Criteria (Gate G1b):
+  - `rozu_functions.csv` contains:
+    - Entry point `0x00100008`;
+    - ALL 1,449 `.gnu.linkonce.t.*` functions with sanitized unique names and
+      exact section sizes;
+    - ALL 4,025 direct `jal` targets inside EE code;
+    - ALL valid EE code pointers from the 284 `.gnu.linkonce.d.*` C++ vtables;
+    - **ZERO** functions overlapping `.vutext` (`0x00291230..0x002953B0`);
+    - Zero overlapping or zero-length function ranges, strictly sorted by start.
+  - Every stub listed in `Port/recomp/rozu.toml` has a verified address and
+    evidence entry recorded in `Docs/SDK_STUB_AUDIT.md` (with `auto_stub_by_name
+    = false` and `direct_tail_calls = false`).
+  - `slus_21448_annotated.elf` passes structural verification (`readelf -S`,
+    `readelf -l`, `readelf -s` — `.vutext` is loaded at `0x00291230` without `X`).
+
+C. READ FIRST
+-------------
+1. Read `./handoff.txt` completely.
+2. Read `architecture/rule_of_rose_binary_profile.md` (Section 3 — exact section
+   addresses and instruction counts), `architecture/unknowns_and_risks.md`
+   (R3, R4, R8), and `architecture/decisions.md` (ADR-002, ADR-003, ADR-004, ADR-005).
+3. Inspect `External/PS2Recomp/ps2xRecomp/src/lib/elf_parser.cpp` and
+   `External/PS2Recomp/ps2xRecomp/src/lib/ps2_recompiler.cpp` to confirm EXACT
+   `ghidra_output` CSV format, how `stubs = [...]` resolves symbol names, and
+   how `ElfParser` treats `PT_LOAD` vs section headers!
+4. Inspect `External/PS2Recomp/ps2xAnalyzer/src/analyzer_main.cpp` and
+   `sce_symbol_scanner.cpp` to learn exact CLI flags & output format.
+
+D. EVIDENCE
+-----------
+CONFIRMED FACTS (verified in-memory from `SLUS_214.48`):
+- Entry point: `0x00100008`, `_gp`: `0x0030FFF0`.
+- Executable EE regions:
+  - `.text`: `0x00100000 .. 0x00280E88` (`0x180E88` B)
+  - `.gnu.linkonce.t.*` (1,449 sections): spanning `0x00280E88..0x00291230` and
+    `0x002953B0..0x00295EB8` (split around `.vutext`!).
+- NON-EE region that MUST BE EXCLUDED from EE function discovery:
+  - `.vutext`: `0x00291230 .. 0x002953B0` (`0x4180` B, 44 VIF `MPG` packets).
+- C++ vtables: 284 `.gnu.linkonce.d.*` sections (`0x002E0A80..0x002E52D0`).
+  In GCC 2.96 MIPS ABI, each vtable contains 8-byte slots `(delta/offset, func_ptr)`
+  or 4-byte function pointers — INSPECT the actual bytes of `_vt$8DogActor` and
+  `_vt$9DogEntity` in `SLUS_214.48` to confirm exact GCC 2.96 vtable slot stride
+  before parsing all 284 vtables!
+- Direct calls: 4,025 unique `jal` targets, all within `0x00100248..0x00295918`.
+- Indirect calls: 558 `jalr` sites; 297 non-`$ra` `jr` sites (switch tables).
+- Sony SDK libraries present: `libkernl 3000`, `libcdvd 3000`, `libmc 3020`,
+  `libmpeg 3000`, `libipu 3000`, `libdma 3000`, `libvu0 3000`, `libdbc 3020`,
+  `libpad2 3020`, `libvib 3000`, `libscf 3000`.
+
+LEGAL BOUNDARY (MANDATORY):
+- DO NOT fetch, copy, or import code or symbol CSVs from
+  `notmanrivera/ruleofrose-decomp` (no license / All Rights Reserved).
+- Use ONLY `External/PS2Recomp/ps2xAnalyzer` (GPL-3.0) + direct analysis of the
+  user's own `SLUS_214.48`.
+
+E. FILE-LEVEL IMPLEMENTATION SCOPE
+----------------------------------
+EDIT:
+- `Tools/ror_prepare.py` — add Phase 2:
+  1. Extract `SLUS_214.48` to `build/prepare/SLUS_214.48` (git-ignored).
+  2. Invoke `ps2xAnalyzer` on `build/prepare/SLUS_214.48` (capture its detected
+     SDK symbols & discovered functions).
+  3. Run deterministic multi-source function discovery over `.text` + all 1,449
+     `.gnu.linkonce.t.*` (excluding `.vutext` `0x00291230..0x002953B0`):
+     - `0x00100008` (`_start`)
+     - All 1,449 `.gnu.linkonce.t.*` exact mangled names & sizes
+     - All valid code pointers inside the 284 `.gnu.linkonce.d.*` vtables
+     - All `jal` targets + cross-function `j` tail targets
+     - Verified `ps2xAnalyzer` SCE SDK symbols
+     - Function-pointer tables in `.data`/`.rodata` (filtering out intra-function
+       switch jump tables!) + `lui`/`addiu` code-address pairs + prologue/gap scan
+       after `jr $ra` + delay slot
+  4. Verify every SCE stub candidate (check RPC ID / syscall / string / caller
+     sanity) and print a clear audit table.
+  5. Emit:
+     - `build/prepare/slus_21448_annotated.elf` (preserving original `PT_LOAD`
+       bytes verbatim, removing `SHF_EXECINSTR` from `.vutext`, adding `.symtab`
+       and `.strtab` for all discovered functions)
+     - `build/prepare/rozu_functions.csv` (`name,start,end,size`)
+     - `Analysis/ADDRESS_MAP.generated.csv` (symbol metadata ONLY — no game bytes)
+     - `build/prepare/prepare_report.txt`
+
+CREATE:
+- `Port/recomp/rozu.toml` — explicit PS2Recomp configuration (`auto_stub_by_name
+  = false`, `direct_tail_calls = false`, `patch_syscalls = false`, `patch_cop0
+  = false`, `patch_cache = false`, `stubs = [...]` populated ONLY with verified
+  SIF/RPC, CDVD, FIO, TTY, MPEG, IPU symbols found in `SLUS_214.48` — keeping
+  newlib `malloc`/`rand`/math/string, DMA/VIF/GS builders, `libpad2`/`libdbc`/
+  `libmc` EE wrappers? Wait: verify in `External/PS2Recomp` whether `libpad2`,
+  `libdbc`, and `libmc` run as recompiled EE code talking over stubbed
+  `sceSifCallRpc` — in SOTC they DID! Verify exact boundary against
+  `sotc.toml` and `ps2xRuntime/src/lib/Kernel/Stubs/`!).
+- `Docs/SDK_STUB_AUDIT.md` — table of every stubbed symbol: name | address |
+  size | discovery method (`ps2xAnalyzer` / string / RPC ID) | verification notes.
+
+F. INCREMENTAL IMPLEMENTATION TASKS
+-----------------------------------
+1. Read `ps2xRecomp`'s `elf_parser.cpp` & `ps2_recompiler.cpp` and `ps2xAnalyzer`
+   CLI to match exact expected formats.
+2. Run `ps2xAnalyzer` directly on extracted `build/prepare/SLUS_214.48` and
+   inspect its output in `build/test_artifacts/G1b/analyzer_out/`.
+3. Inspect the bytes of 3 `.gnu.linkonce.d.*` vtables (e.g., `_vt$8DogActor`,
+   `_vt$9DogEntity`, `_vt$9MagLifePC`) to confirm exact GCC 2.96 vtable layout
+   before coding the vtable scanner in `Tools/ror_prepare.py`.
+4. Implement full discovery + annotated ELF writer + CSV/report emitters in
+   `Tools/ror_prepare.py`.
+5. Run `Tools/ror_prepare.py` and verify invariants via an automated self-check
+   (0 `.vutext` functions, 1,449 `.gnu.linkonce.t.*` covered, 4,025 `jal` targets
+   covered, 0 overlaps, total function count ~6,500–9,500).
+6. Audit every matched Sony SDK symbol (`sceSif*`, `sceCd*`, `sceOpen`/`sceRead`/
+   `sceWrite`/`sceClose`/`sceLseek`, `scePrintf`, `sceMpeg*`, `sceIpu*`), write
+   `Docs/SDK_STUB_AUDIT.md` and `Port/recomp/rozu.toml`.
+
+G. EXPLICIT COMMANDS
+--------------------
+Linux:
+  mkdir -p build/test_artifacts/G1b build/prepare
+  python3 Tools/ror_prepare.py \
+    --profile Port/profile/SLUS-21448_v1.00.json \
+    --iso "Game/Rule of Rose (USA).iso" \
+    --analyzer build/linux/External/PS2Recomp/ps2xAnalyzer/ps2_analyzer \
+    --out build/prepare \
+    --emit-header build/prepare/rozu_layout_generated.h \
+    --address-map Analysis/ADDRESS_MAP.generated.csv \
+    | tee build/test_artifacts/G1b/prepare.log
+  readelf -S build/prepare/slus_21448_annotated.elf | grep -E '\.text|\.vutext|\.symtab|\.strtab' | tee build/test_artifacts/G1b/readelf_sec.log
+  # Automated invariant verification script (add `--self-test` flag to ror_prepare.py):
+  python3 Tools/ror_prepare.py --verify-output build/prepare | tee build/test_artifacts/G1b/verify_output.log
+
+H. ACCEPTANCE TESTS (PASS/FAIL THRESHOLDS)
+------------------------------------------
+1. `ror_prepare.py` exits `0`.
+2. `--verify-output` PASSES ALL invariants:
+   - Entry `0x00100008` is in `rozu_functions.csv`;
+   - 1,449 / 1,449 `.gnu.linkonce.t.*` starts are present;
+   - 4,025 / 4,025 `jal` targets are covered (either function starts or verified
+     internal entry labels — zero missing);
+   - **0** functions intersect `.vutext` (`0x00291230..0x002953B0`);
+   - **0** overlapping ranges, **0** duplicate sanitized names;
+   - `readelf -S build/prepare/slus_21448_annotated.elf` shows `.vutext` has flag
+     `A` (NOT `AX`).
+3. Every stub in `Port/recomp/rozu.toml` exists verbatim in `rozu_functions.csv`
+   AND is documented with verification evidence in `Docs/SDK_STUB_AUDIT.md`.
+4. `git status --short` confirms `build/prepare/SLUS_214.48` and
+   `slus_21448_annotated.elf` are git-ignored.
+
+I. PCSX2 / ORIGINAL BEHAVIOR COMPARISON METHOD
+----------------------------------------------
+Sanity check against known structural properties of `SLUS_214.48`:
+- Every `.gnu.linkonce.t.*` function boundary matches exact ELF section bounds.
+- Every stubbed Sony SDK function's disassembly (`Tools/disasm.py`) shows the
+  expected PS2 SDK behavior (e.g., `sceSifInitRpc` references SIF RPC init,
+  `sceCdRead` calls SIF RPC server `0x8000059A`, `sceOpen` calls `0x80000001`).
+
+J. FAILURE TRIAGE
+-----------------
+- If `ps2xAnalyzer` misses some Sony SDK 3.0x functions (e.g., due to `-Os`
+  compilation differences in `SLUS_214.48`), do NOT guess addresses! Use
+  deterministic fallback identification in `Tools/ror_prepare.py` (scanning for
+  exact Sony SDK SIF RPC server IDs `0x80000001`/`0x80000006`/`0x80000592..A`/
+  `0x80000400`, exact SDK error strings like `"sceMpeg..."`, `"libcdvd"`, and
+  exact syscall wrappers), and log each verification in `Docs/SDK_STUB_AUDIT.md`.
+- If `ps2xRecomp`'s `ElfParser` has a bug reading ELF files with 1,700+ sections,
+  inspect `elf_parser.cpp` and fix generically in `External/PS2Recomp` (branch
+  `rozu-port`) OR coalesce the `.gnu.linkonce.t.*` sections cleanly into one
+  contiguous `.text_linkonce` segment in `slus_21448_annotated.elf` while keeping
+  every symbol in `.symtab`. Verify which approach `elf_parser.cpp` prefers!
+
+K. SAFETY + GIT COMMIT CHECKPOINT
+---------------------------------
+1. Check `git status --short`, `git diff --check`, `git submodule status`.
+2. Verify ZERO proprietary binaries (`SLUS_214.48`, `slus_21448_annotated.elf`)
+   are staged. (`Analysis/ADDRESS_MAP.generated.csv` contains only addresses &
+   symbol names — verify no raw instruction bytes or copyrighted strings.)
+3. Stage ONLY approved files:
+     git add Tools/ror_prepare.py Port/recomp/rozu.toml Docs/SDK_STUB_AUDIT.md \
+       Analysis/ADDRESS_MAP.generated.csv handoff.txt
+4. Commit:
+     git commit -m "M03: implement SLUS_214.48 function discovery, .vutext exclusion, and SDK stub audit"
+5. Report `git status --short`. No push.
+
+L. HANDOFF UPDATE INSTRUCTIONS
+------------------------------
+Update `./handoff.txt` with total discovered function count, named SDK stub
+count, vtable count, `build/test_artifacts/G1b/` paths, M03 commit SHA, and
+append-only progress log entry.
+
+M. STOP CONDITION
+-----------------
+STOP after M03 commit and `handoff.txt` update.
+Report exact counts (total functions, linkonce, vtable, verified SDK stubs),
+invariant check results, commit SHA, and next step:
+`gemini_hydrogen/Gemini_Step_005.txt` (M04).
+================================================================================

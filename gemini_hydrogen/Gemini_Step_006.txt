@@ -1,0 +1,190 @@
+================================================================================
+GEMINI_STEP_006.TXT — MILESTONE M05 (GATE G3)
+WIRE ROZU EXECUTABLE, EE STARTUP, IOPCONF.CNF BOOT & FIRST REAL EXECUTION TRACE
+================================================================================
+
+A. ROLE
+-------
+You are GEMINI HYDROGEN, the implementation and testing agent.
+
+B. OBJECTIVE & PREREQUISITES
+----------------------------
+Objective:
+  Link the full statically recompiled `rozu_game_code` with `ps2_runtime`,
+  `ps2xIOP`, and `Port/src/main.cpp` into the native `rozu` executable, boot
+  Rule of Rose from its real entry point `0x00100008`, and achieve genuine,
+  reproducible boot advancement through `crt0`, `main()`, `IOPCONF.CNF` IOP
+  module loading, `SYSTEM.INI` parsing, and initial `cdrom0:` data reads!
+
+Prerequisites:
+  - M04 (`Gemini_Step_005.txt`) committed on `rozu/port-bringup` (Gate G2 PASS).
+  - Compiled `rozu_game_code` library available (use `-DROZU_GAME_CODE_LIBRARY=...`
+    for fast host-only rebuilds whenever `Port/generated/` is unchanged!).
+
+Acceptance Criteria (Gate G3):
+  - `rozu` executable links and launches cleanly on `Game/Rule of Rose (USA).iso`.
+  - Disc identity & all 13 SHA-256 hashes pass before guest execution begins.
+  - Guest executes from `0x00100008` in deterministic mode (`ROZU_HEADLESS=1
+    PS2X_GS_GPU=0 PS2X_MTVU=0 PS2X_VU1_RECOMP=0`) with `MissingFunctionPolicy::Stop`.
+  - All 9 `IOPCONF.CNF` modules load cleanly on `ps2xIOP` with zero unresolved
+    IOP imports, including `RXSNDDRV.IRX` printing `"Start RX - sound RPC server"`
+    (or verified equivalent `rxsnddrv` init log) and `MCMAN.IRX` + `MCSERV.IRX`.
+  - Guest reads `SYSTEM.INI`, `IOPCONF.CNF`, and initial `DATA/` or `MOVIE/`
+    files via `cdrom0:` (`PS2CdImage`).
+  - Zero crashes, zero unmapped guest branch targets, and reproducible VSync /
+    boot-milestone traces across 2 consecutive deterministic runs.
+
+C. READ FIRST
+-------------
+1. Read `./handoff.txt` completely (note cached `rozu_game_code` path!).
+2. Read `architecture/rule_of_rose_port_architecture.md` (Sections 3.2 & 4),
+   `architecture/rule_of_rose_binary_profile.md` (Section 4 IOP modules), and
+   `architecture/unknowns_and_risks.md` (R4, R5, R6, R8).
+3. Consult `Docs/SDK_STUB_AUDIT.md` and `Port/recomp/rozu.toml`.
+
+D. EVIDENCE
+-----------
+CONFIRMED FACTS:
+- Entry point: `0x00100008`, `_gp = 0x0030FFF0`.
+- `IOPCONF.CNF` loads: `ioprp300.img`, `sio2man.irx`, `sio2d.irx`, `dbcman.irx`,
+  `pad2/ds1o_d.irx`, `mcman.irx`, `mcserv.irx`, `libsd.irx`, `rxsnddrv.irx`.
+- 8 of 9 modules are byte-for-byte identical to `sotc-vibe-pc`; `rxsnddrv.irx`
+  imports only `libsd` ordinals `[4..11,13,15,17,18,20,23,26]` + standard IOP.
+- `SLUS_214.48` strings include `cdrom0:\DATA\CMNTEX\LOADING.BIN`, `SYSTEM.INI`,
+  `IOPCONF.CNF`, `CP_LOGO.PSS`, `data/PREMIERE.RPK`, `data/bg/mapunit.bin`.
+
+HYPOTHESES TO VERIFY AT RUNTIME:
+- Whether any indirect-call (`jalr`) target was missed in M03 function discovery
+  (if so, `MissingFunctionPolicy::Stop` will print the exact missing PC!).
+- Whether `SLUS_214.48` writes debug/status lines to stdout/fd 1 (`sceWrite`/
+  `write`/`scePrintf`) that `tty_bridge` should forward to `[GAME]`.
+- Whether `MCMAN.IRX` + `MCSERV.IRX` initialize cleanly on `ps2xIOP` (check
+  `secrman` 3 imports!).
+- Whether `PS2X_ENABLE_FFMPEG=OFF` stalls or advances cleanly if boot reaches
+  `CP_LOGO.PSS` (FMV decoding itself is targeted in M06).
+
+E. FILE-LEVEL IMPLEMENTATION SCOPE
+----------------------------------
+CREATE:
+- `Port/src/main.cpp` — clean Rule of Rose composition root:
+  - Cross-platform `executableDirectory()` (`GetModuleFileNameW` on Win32,
+    `/proc/self/exe` on Linux) and crash reporter (`#if defined(_WIN32)` +
+    POSIX `SIGABRT`/`SIGSEGV` handler on Linux).
+  - Loads `rozu.ini` (`rozu::config::load`), configures `ROZU_TRACE`, locates &
+    verifies `SLUS-21448` ISO (`rozu::verifyDiscAndPrepare`).
+  - Sets `PS2Runtime::IoPaths` (`elfPath`, `cdImage`, `mcRoot = exeDir/memcards/mc0`),
+    sets deterministic bring-up defaults (`GSCpuBackend` if `PS2X_GS_GPU=0`,
+    NTSC 60 Hz, NO forced right-stick inversion, NO mouse camera).
+  - Initializes `PS2Runtime("Rule of Rose")`, loads cached `SLUS_214.48`, sets
+    `MissingFunctionPolicy::Stop`, attaches `rozu::FunctionHooks`, installs
+    `applyEeFloatingPointMode()` at `0x00100008`, `tty_bridge`, `diagnostics`,
+    `debug_script`, `watchdog`, logs bindings, and calls `runtime.run()`.
+- `Port/src/rozu/hle/tty_bridge.{h,cpp}` — forwards guest fd 1/2 writes (`write`/
+  `sceWrite` at verified `Docs/SDK_STUB_AUDIT.md` addresses) to `[GAME]` log.
+- `Tools/rozu_boot_check.py` — automated deterministic boot harness: launches
+  `rozu` with timeout (e.g. 60–120 s), `ROZU_HEADLESS=1`, `PS2X_GS_GPU=0`,
+  `PS2X_MTVU=0`, `ROZU_TRACE=BOOT,IOP,FILE,GAME`, and `PS2X_MAX_VSYNC` (or
+  `ROZU_STOP_AFTER_FIELDS` / watchdog), parses log milestones, verifies 0
+  crashes / 0 missing functions / all 9 IOP modules loaded / reproducible output
+  across 2 runs, and writes JSON summary to `build/test_artifacts/G3/`.
+
+EDIT:
+- `Port/CMakeLists.txt` — add `rozu` executable linking `rozu_host_lib`,
+  `rozu_game_code`, `ps2_runtime`, and `ROZU_GAME_CODE_LIBRARY` fast-relink cache.
+- `Tools/ror_prepare.py` / `Port/recomp/rozu.toml` — ONLY if runtime boot
+  reveals a genuinely missing function entry or missing verified SDK stub
+  (re-run `Tools/generate.py` and document every addition in `Docs/SDK_STUB_AUDIT.md`!).
+- `External/PS2Recomp` (branch `rozu-port`) — ONLY if a genuine generic IOP/EE
+  bug (e.g., `secrman` import ordinal needed by `MCMAN.IRX`) blocks boot; add a
+  unit test in `ps2xIOP/tests` or `ps2xTest`.
+
+F. INCREMENTAL IMPLEMENTATION TASKS
+-----------------------------------
+1. Implement `Port/src/rozu/hle/tty_bridge.{h,cpp}` and `Port/src/main.cpp`
+   (include clean `ROZU_STOP_AFTER_FIELDS=N` env switch for deterministic
+   headless CI runs!).
+2. Update `Port/CMakeLists.txt` and build `rozu`.
+3. Launch `rozu` headless with `ROZU_TRACE=BOOT,IOP,FILE,GAME` and a 60 s
+   timeout. Inspect EVERY line of stdout/stderr!
+4. Iteratively triage real boot blockers in exact order of first failure:
+   - Missing indirect function target -> inspect PC & caller `$ra` in `SLUS_214.48`,
+     fix discovery rule generically in `Tools/ror_prepare.py`, regenerate.
+   - Missing/wrong SDK stub -> verify via disassembly & `Docs/SDK_STUB_AUDIT.md`,
+     update `Port/recomp/rozu.toml`, regenerate.
+   - IOP module load / `secrman` / `MCMAN` / `RXSNDDRV` issue -> inspect `ps2xIOP`
+     logs, fix generically in `External/PS2Recomp` with unit test.
+5. Once boot reliably loads all 9 `IOPCONF.CNF` modules and advances VSync /
+   disc reads cleanly, write `Tools/rozu_boot_check.py` and run 2 back-to-back
+   deterministic runs to verify reproducibility.
+
+G. EXPLICIT COMMANDS
+--------------------
+Linux:
+  mkdir -p build/test_artifacts/G3
+  cmake --build build/linux --target rozu
+  python3 Tools/rozu_boot_check.py \
+    --exe build/linux/bin/rozu \
+    --iso "Game/Rule of Rose (USA).iso" \
+    --fields 300 --timeout 120 --runs 2 \
+    --out build/test_artifacts/G3 | tee build/test_artifacts/G3/summary.log
+
+H. ACCEPTANCE TESTS (PASS/FAIL THRESHOLDS)
+------------------------------------------
+1. `rozu` builds and links with exit `0`.
+2. `Tools/rozu_boot_check.py` exits `0` across 2 consecutive deterministic runs:
+   - Disc & 13 SHA-256 hashes verified;
+   - Guest enters `0x00100008` and advances >= 300 VSync fields (or documented
+     clean milestone before FMV) within 120 s timeout;
+   - All 9 `IOPCONF.CNF` modules load with 0 unresolved IOP imports;
+   - `RXSNDDRV.IRX` starts its RPC server;
+   - At least one `cdrom0:` game file (`SYSTEM.INI`, `LOADING.BIN`, or
+     `CP_LOGO.PSS` / `PREMIERE.RPK`) is opened and read;
+   - **0** unhandled exceptions, **0** missing guest function stops, **0** hangs;
+   - Run 1 and Run 2 boot milestone sequences match identically.
+3. `ps2x_tests` and `ps2_iop_emulator_tests` still pass 100% (`ctest`).
+
+I. PCSX2 / ORIGINAL BEHAVIOR COMPARISON METHOD
+----------------------------------------------
+Compare observed IOP module load sequence and `[GAME]`/`[IOP]` console messages
+against `IOPCONF.CNF` order and `RXSNDDRV.IRX` strings (`Installed sound driver
+version 1.00`, `Start RX - sound RPC server`). If PCSX2 + user BIOS are
+available under `Emulator/`, also capture PCSX2 EE/IOP console log from cold
+boot and verify module load order and initial file reads match.
+
+J. FAILURE TRIAGE
+-----------------
+- Capture full stdout/stderr to `build/test_artifacts/G3/run_fail.log`.
+- Never set `MissingFunctionPolicy::ContinueToTarget` to hide missing targets;
+  always fix the root function discovery in `Tools/ror_prepare.py`.
+- If boot reaches `CP_LOGO.PSS` and hangs ONLY because `PS2X_ENABLE_FFMPEG=OFF`
+  returns dummy frames that never set EOF, verify `Stubs/MPEG.cpp` behavior and
+  either ensure clean EOF signaling when FFmpeg is disabled (generic fix) or
+  document the exact `CP_LOGO.PSS` handoff point as the exact M05->M06 boundary.
+
+K. SAFETY + GIT COMMIT CHECKPOINT
+---------------------------------
+1. Check `git status --short`, `git diff --check`, `git submodule status`.
+   Confirm `Port/generated/`, `build/`, `game_data/`, `memcards/` are ignored.
+2. If `External/PS2Recomp` was modified on `rozu-port`, commit submodule first.
+3. Stage ONLY approved files:
+     git add Port/src/main.cpp Port/src/rozu/hle/ Port/CMakeLists.txt \
+       Tools/rozu_boot_check.py Tools/ror_prepare.py Port/recomp/rozu.toml \
+       Docs/SDK_STUB_AUDIT.md handoff.txt [External/PS2Recomp if updated]
+4. Commit:
+     git commit -m "M05: link rozu executable and achieve verified EE/IOP boot trace (G3)"
+5. Verify `git status --short`. No push.
+
+L. HANDOFF UPDATE INSTRUCTIONS
+------------------------------
+Update `./handoff.txt` with Gate G3 PASS evidence, exact boot milestones
+observed (guest PCs, IOP modules loaded, files read, VSync rate), any newly
+discovered symbols/addresses, submodule SHA if updated, M05 commit SHA, and
+append-only progress log.
+
+M. STOP CONDITION
+-----------------
+STOP after M05 commit and `handoff.txt` update.
+Report files changed, G3 boot trace summary, commit SHA, any remaining boot/FMV
+faults to hand off to M06, and next step:
+`gemini_hydrogen/Gemini_Step_007.txt` (M06 — CONDITIONAL).
+================================================================================

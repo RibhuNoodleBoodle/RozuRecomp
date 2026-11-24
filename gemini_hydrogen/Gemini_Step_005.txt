@@ -1,0 +1,191 @@
+================================================================================
+GEMINI_STEP_005.TXT — MILESTONE M04 (GATE G2 — HARD FEASIBILITY POC)
+RECOMPILE & EXECUTE A REAL SUBSET OF SLUS_214.48, THEN FULL ELF CODEGEN & BUILD
+================================================================================
+
+A. ROLE
+-------
+You are GEMINI HYDROGEN, the implementation and testing agent.
+
+B. OBJECTIVE & PREREQUISITES
+----------------------------
+Objective:
+  Pass the **Hard Feasibility Gate (G2)** before attempting full game boot:
+  1. Implement cross-platform `Tools/generate.py` (orchestrating `ror_prepare.py`
+     -> `ps2_recomp` into staging -> atomic sync to `Port/generated/`);
+  2. Execute a **small falsifiable Proof of Concept (`rozu_poc_test`)** that
+     compiles and natively executes at least 2–3 REAL statically recompiled
+     `SLUS_214.48` functions (e.g., pure leaf `.gnu.linkonce.t.*` getters/setters
+     like `setId__8DogActori` / `getId__C8DogActor` and a small `.text` math/
+     utility function) on a real `R5900Context` + `rdram` buffer, asserting exact
+     expected guest register and memory outputs;
+  3. Run `ps2_recomp` across the ENTIRE `SLUS_214.48` ELF (`Port/recomp/rozu.toml`),
+     verifying **0 decode failures** and **0 unhandled instructions**, and
+     successfully compile the full `rozu_game_code` static library!
+
+Prerequisites:
+  - M03 (`Gemini_Step_004.txt`) committed on `rozu/port-bringup` (Gate G1b PASS).
+  - `Port/recomp/rozu.toml` and `Tools/ror_prepare.py` verified.
+
+Acceptance Criteria (Gate G2):
+  - `rozu_poc_test` compiles and exits `0`, proving real statically recompiled
+    Rule of Rose EE instructions execute natively and mutate guest RDRAM /
+    registers identically to MIPS R5900 semantics.
+  - Full `Tools/generate.py --iso "Game/Rule of Rose (USA).iso"` exits `0`:
+    - `ps2_recomp` reports **0 decode failures** and **0 unhandled instructions**;
+    - `Port/generated/register_functions.cpp`, `ps2_recompiled_functions.h`,
+      `ps2_recompiled_stubs.h`, and `rozu_layout_generated.h` are created;
+    - `Port/generated/` contains ZERO functions inside `.vutext`
+      (`0x00291230..0x002953B0`);
+    - `rozu_game_code` static library builds cleanly to completion (`exit 0`).
+  - `git status` confirms `Port/generated/` is 100% git-ignored!
+
+C. READ FIRST
+-------------
+1. Read `./handoff.txt` completely.
+2. Read `architecture/rule_of_rose_port_architecture.md` (Section 3.1 pipeline),
+   `architecture/build_and_test_strategy.md` (Gate G2), and `Docs/SDK_STUB_AUDIT.md`.
+3. Inspect `Port/recomp/rozu.toml` and `Port/CMakeLists.txt`.
+
+D. EVIDENCE
+-----------
+CONFIRMED FACTS:
+- `SLUS_214.48` has verified leaf `.gnu.linkonce.t.*` functions (from Phase B
+  section scan):
+  - `setId__8DogActori` at `0x00280FD4` (size `0x08` = 2 instructions: `jr $ra; sw $a1, off($a0)` — verify exact disassembly with `Tools/disasm.py`!)
+  - `getId__C8DogActor` at `0x00280FDC` (size `0x08` = 2 instructions: `jr $ra; lw $v0, off($a0)` — verify exact disassembly!)
+  - `setMotionSpeed__8DogActorf` at `0x00281020` (size `0x08`, float store!)
+  - `getMotionSpeed__C8DogActor` at `0x00281028` (size `0x08`, float load!)
+  - Plus `setBaseRotate__8DogActorfff` (`0x0028126C`, size `0x20`) or a small
+    self-contained `.text` arithmetic/loop routine.
+- `SLUS_214.48` has 630 MMI, 1,614 COP2 VU0, 16,632 FPU, 1,402 `lq`/`sq`, and
+  841 `lqc2`/`sqc2` instructions — all instruction classes supported by
+  `LightVelox/PS2Recomp`.
+
+HYPOTHESES TO VERIFY IN THIS STEP:
+- Whether ANY R5900 instruction encoding in `SLUS_214.48` triggers an unhandled
+  instruction or codegen C++ compile error under GCC 15.2 (e.g., strict C++20
+  conversions or MSVC-isms in generated code).
+
+E. FILE-LEVEL IMPLEMENTATION SCOPE
+----------------------------------
+CREATE:
+- `Tools/generate.py` — cross-platform (Linux + Windows) generator:
+  - Finds ISO (`--iso`, `ROZU_ISO`, or `Game/*.iso` matching size `3393454080`);
+  - Finds `ps2_recomp` & `ps2xAnalyzer` across `build/linux/...` and `build/port/...`;
+  - Runs `Tools/ror_prepare.py` into `build/prepare/`;
+  - Runs `ps2_recomp` using staged copy of `Port/recomp/rozu.toml` outputting to
+    `build/generated_staging/`;
+  - Verifies non-empty `register_functions.cpp`, 0 decode errors, and 0 `.vutext`
+    functions;
+  - Atomically syncs `build/generated_staging/` -> `Port/generated/` (updating
+    only changed files so incremental rebuilds stay fast!).
+- `Port/tests/rozu_poc_test.cpp` — standalone native test linking the recompiled
+  functions (or `rozu_game_code`) + `ps2_runtime`, initializing a real 32 MB
+  RDRAM + `R5900Context`, calling the real recompiled `setId__8DogActori`,
+  `getId__C8DogActor`, `setMotionSpeed__8DogActorf`, `getMotionSpeed__C8DogActor`,
+  and one verified non-trivial `.text` helper function, asserting exact guest
+  memory & register results (including FPU RTZ mode!).
+
+EDIT:
+- `Port/CMakeLists.txt` — enable `rozu_game_code` and `rozu_poc_test` when
+  `Port/generated/register_functions.cpp` exists. Add PCH for `rozu_game_code`
+  and `SKIP_PRECOMPILE_HEADERS ON` + `-O0` (GCC) / `/Od` (MSVC) for
+  `register_functions.cpp` to keep compile times and RAM usage reasonable!
+- `External/PS2Recomp` (ONLY if a genuine generic codegen/GCC20 bug is uncovered):
+  fix generically on branch `rozu-port` with a `ps2x_tests` unit test.
+
+LEAVE ALONE:
+- `Port/generated/` MUST remain 100% git-ignored (NEVER commit generated C++!).
+
+F. INCREMENTAL IMPLEMENTATION TASKS
+-----------------------------------
+1. Disassemble `0x00280FD4`, `0x00280FDC`, `0x00281020`, `0x00281028`, and one
+   small self-contained `.text` function using `Tools/disasm.py` to know exact
+   expected register/memory effects (never guess offsets!).
+2. Write `Tools/generate.py` (with `--subset` optional flag or fast full run;
+   measure how long `ps2_recomp` takes on `SLUS_214.48` — it is typically seconds!).
+3. Run `python3 Tools/generate.py --iso "Game/Rule of Rose (USA).iso"` and inspect
+   `ps2_recomp` output for decode failures, warnings, and generated file count.
+4. Run a quick subset compile test first (`rozu_poc_test` compiling just the
+   selected 4–5 generated `.cpp` files + `ps2_runtime`) so any GCC/header issue
+   is caught in < 10 seconds rather than waiting for 7,000+ files!
+5. Run `rozu_poc_test` and confirm exact PASS on all assertions.
+6. Now configure & build the FULL `rozu_game_code` static library with Ninja
+   (monitoring RAM/parallelism `-j` if needed so the host doesn't OOM). Record
+   exact build wall time, `.cpp` count, and final `librozu_game_code.a` size!
+
+G. EXPLICIT COMMANDS
+--------------------
+Linux:
+  mkdir -p build/test_artifacts/G2
+  python3 Tools/generate.py --iso "Game/Rule of Rose (USA).iso" \
+    | tee build/test_artifacts/G2/generate.log
+  # Re-configure so Port/CMakeLists.txt sees Port/generated/:
+  cmake -S . -B build/linux -G Ninja -DCMAKE_BUILD_TYPE=RelWithDebInfo -DPS2X_BUILD_TEST=ON
+  # Fast PoC first (compiles small subset of real generated functions):
+  cmake --build build/linux --target rozu_poc_test
+  ./build/linux/Port/rozu_poc_test | tee build/test_artifacts/G2/poc_test.log
+  # Full static library build (use -j N tuned to host RAM if needed):
+  cmake --build build/linux --target rozu_game_code 2>&1 | tee build/test_artifacts/G2/build_game_code.log
+
+H. ACCEPTANCE TESTS (PASS/FAIL THRESHOLDS)
+------------------------------------------
+1. `Tools/generate.py` exits `0` with **0 decode failures** and **0 unhandled
+   instructions** logged by `ps2_recomp`.
+2. Grep of `Port/generated/register_functions.cpp` confirms:
+   - Entry `0x00100008` is registered;
+   - All verified SDK stubs in `Port/recomp/rozu.toml` are bound;
+   - **0** entries in `0x00291230..0x002953B0` (`.vutext`).
+3. `rozu_poc_test` exits `0` with all assertions passing on real recompiled
+   `SLUS_214.48` instructions.
+4. `rozu_game_code` compiles with exit `0` and produces `librozu_game_code.a`
+   (or `rozu_game_code.lib` on Windows).
+5. `git status --short` shows ZERO files under `Port/generated/`.
+
+I. PCSX2 / ORIGINAL BEHAVIOR COMPARISON METHOD
+----------------------------------------------
+Each function exercised in `rozu_poc_test` is verified directly against the exact
+disassembled MIPS R5900 instructions of `SLUS_214.48` (hand-checked register and
+RDRAM byte transitions, including IEEE/EE float bit patterns).
+
+J. FAILURE TRIAGE
+-----------------
+- If `ps2_recomp` reports any decode failure or unhandled instruction, record the
+  exact guest PC, raw 32-bit word, and enclosing function:
+  - First verify the PC is really EE code (not inline data/jump-table/rodata
+    accidentally swept into a function range by `ror_prepare.py`!).
+  - If it IS valid R5900 code not yet handled by `ps2_recomp`, implement generic
+    support in `External/PS2Recomp/ps2xRecomp` (branch `rozu-port`) with a unit
+    test in `ps2xTest`.
+- If GCC 15 rejects generated C++ syntax (e.g., MSVC intrinsic or narrowing),
+  fix generically in `ps2xRecomp` / `ps2_runtime_macros.h` (branch `rozu-port`),
+  verify `ps2x_tests` passes, and re-run `generate.py`.
+- If parallel build exhausts RAM on giant generated files, cap `-j` (e.g. `-j 4`)
+  and document host RAM / build time in `handoff.txt`.
+
+K. SAFETY + GIT COMMIT CHECKPOINT
+---------------------------------
+1. Verify `git status --short` (CONFIRM `Port/generated/` IS IGNORED!).
+2. Review `git diff --check`. If `External/PS2Recomp` was modified on `rozu-port`,
+   commit inside `External/PS2Recomp` first, then stage the submodule pointer.
+3. Stage ONLY approved files:
+     git add Tools/generate.py Port/tests/rozu_poc_test.cpp Port/CMakeLists.txt \
+       handoff.txt [External/PS2Recomp if updated]
+4. Commit:
+     git commit -m "M04: pass G2 feasibility PoC and compile full recompiled SLUS_214.48 library"
+5. Report `git status --short`. No push.
+
+L. HANDOFF UPDATE INSTRUCTIONS
+------------------------------
+Update `./handoff.txt` with exact generated `.cpp` count, `ps2_recomp` decode
+stats, `rozu_poc_test` results, `rozu_game_code` build time & library path (for
+`ROZU_GAME_CODE_LIBRARY` fast host rebuilds in M05+!), Gate G2 PASS verdict,
+commit SHA, and append-only progress log.
+
+M. STOP CONDITION
+-----------------
+STOP after M04 commit and `handoff.txt` update.
+Report files changed, G2 PoC test evidence, full library compile evidence,
+commit SHA, and next step: `gemini_hydrogen/Gemini_Step_006.txt` (M05).
+================================================================================

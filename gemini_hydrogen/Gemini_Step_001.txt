@@ -1,0 +1,243 @@
+================================================================================
+GEMINI_STEP_001.TXT — MILESTONE M00 (GATE G0a)
+PROTECT REPOSITORY, PIN PS2RECOMP SUBMODULE, INVENTORY & VERIFY TOOLCHAIN
+================================================================================
+
+A. ROLE
+-------
+You are GEMINI HYDROGEN, the implementation and testing agent.
+You own coding, configuration, building, debugging, testing, and Git commits.
+Do NOT fabricate test results or skip required checks.
+
+B. OBJECTIVE & PREREQUISITES
+----------------------------
+Objective:
+  Establish a safe, legally hygienic, reproducible baseline on a dedicated
+  feature branch (`rozu/port-bringup`) by:
+  1. Hardening `.gitignore` BEFORE extracting, generating, or building anything;
+  2. Properly initializing and pinning the `External/PS2Recomp` submodule to
+     verified commit `d06a4ab4a6902e0ae324f184c22581c3aa387c36` from
+     `https://github.com/LightVelox/PS2Recomp.git`;
+  3. Auditing `External/PS2Recomp` Linux vs Windows buildability (specifically
+     `ps2xRecomp`, `ps2xAnalyzer`, `ps2xIOP`, `ps2xRuntime`, `gs_gl`, FFmpeg);
+  4. Building `ps2_recomp`, `ps2xAnalyzer`, `ps2x_tests`, and
+     `ps2_iop_emulator_tests` on the current host toolchain and passing 100% of
+     engine unit tests (`ctest`).
+
+Prerequisites:
+  - Starting workspace at `/mnt/6421-8598/building/RozuRecomp` (HEAD `019f6de`).
+  - No prior Hydrogen commits required.
+
+Acceptance Criteria (Gate G0a):
+  - Dedicated branch `rozu/port-bringup` created without destroying user files.
+  - `.gitignore` excludes all game media, extracted binaries, `Port/generated/`,
+    `build/`, `Analysis/extracted/`, `Analysis/oracle/`, `Emulator/`,
+    `Tools/pcsx2-oracle/`, `memcards/`, `states/`, `game_data/`, `*.state`,
+    `*.ps2`, `*.elf`, `*.gs`, `*.gsr`, `*.wav`, `rozu.ini`, `sotc.ini`.
+  - `External/PS2Recomp` is a real git submodule checked out at
+    `d06a4ab4a6902e0ae324f184c22581c3aa387c36` (clean working tree).
+  - `ps2_recomp` and `ps2xAnalyzer` binaries compile and run `--help` (or usage).
+  - `ps2x_tests` and `ps2_iop_emulator_tests` build and pass via `ctest`.
+  - Local toolchain & Linux-vs-Windows constraints (WGL/GLX, FFmpeg) recorded in
+    `handoff.txt` and verified from real source inspection.
+
+C. READ FIRST
+-------------
+1. Read `./handoff.txt` completely.
+2. Read `architecture/base_repo_audit.md`, `architecture/unknowns_and_risks.md`
+   (especially R1, R2), and `architecture/decisions.md` (ADR-006, ADR-007, ADR-010).
+3. Run `git status --short --branch`, `git rev-parse HEAD`, and
+   `git submodule status --recursive` to reconcile workspace state.
+
+D. EVIDENCE
+-----------
+CONFIRMED FACTS (from Neon audit on 2026-11-24):
+- Local repo `HEAD` is `019f6deab05a8d3a11763f60e61355f53883583d`; ONLY
+  `.gitignore` is tracked in `HEAD`. All `sotc-vibe-pc` files, `architecture/`,
+  `gemini_hydrogen/`, `handoff.txt`, and `Google_Neon_Rule_of_Rose_Recomp_Architect.txt`
+  are currently untracked.
+- `Game/Rule of Rose (USA).iso` (3,393,454,080 B, SHA-256
+  `95ff5d1298b1bb19443098852c95c42886605f01fb1ffa8d823ff496598989e9`) is present
+  and git-ignored by `*.iso`.
+- `External/PS2Recomp/` is currently an empty directory. `.gitmodules` lists
+  `https://github.com/LightVelox/PS2Recomp.git` (`main` = `d06a4ab4a6902e0ae324f184c22581c3aa387c36`).
+- Host OS is Ubuntu 26.04.1 LTS x86_64 with `cmake 4.2.3`, `ninja 1.13.2`,
+  `g++ 15.2.0`, `python3 3.14.4`, `libsdl2-dev`, `libopengl-dev`, `libegl1-mesa-dev`.
+- `LightVelox/PS2Recomp` is GPL-3.0 and includes `ps2xAnalyzer`, `ps2xRecomp`,
+  `ps2xIOP`, `ps2xRuntime`, and `ps2xTest`.
+
+HYPOTHESES TO VERIFY AT RUNTIME IN THIS STEP:
+- Whether `External/PS2Recomp/ps2xRuntime/src/lib/gs/gpu/gs_gl.cpp` compiles on
+  Linux or uses Win32 WGL unconditionally.
+- Whether `External/PS2Recomp` builds cleanly under GCC 15.2 + C++20 without
+  warnings-as-errors or missing `<cstdint>`/`<algorithm>` headers.
+
+E. FILE-LEVEL IMPLEMENTATION SCOPE
+----------------------------------
+EDIT / CREATE (parent repo):
+- `.gitignore` — harden with complete legal, build, generated, and oracle rules.
+- `.gitmodules` + git submodule entry `External/PS2Recomp` — register and pin to
+  `d06a4ab4a6902e0ae324f184c22581c3aa387c36`.
+- `handoff.txt` — record exact submodule SHA, compiler test results, and Linux
+  vs Windows findings.
+
+GENERIC ENGINE CHANGES (ONLY IF NEEDED FOR GCC 15 / LINUX BUILD):
+- If `External/PS2Recomp` fails to compile on Linux GCC 15 due to a missing
+  standard header or `#if defined(_WIN32)` guard in `gs_gpu_backend`/`gs_gl`:
+  create branch `rozu-port` inside `External/PS2Recomp` from `d06a4ab4`, apply
+  the minimal game-agnostic fix, commit it inside `External/PS2Recomp`, and pin
+  the new submodule SHA in the parent repo. Never put Rule of Rose code inside
+  `External/PS2Recomp`.
+
+LEAVE ALONE (DO NOT DELETE OR MODIFY IN M00):
+- `Game/Rule of Rose (USA).iso` (NEVER touch or stage).
+- `Google_Neon_Rule_of_Rose_Recomp_Architect.txt` (user's prompt file).
+- `Port/`, `Tools/`, `CMakeLists.txt` (cleanup/renaming belongs to M01 / Step 002).
+- `architecture/*` and `gemini_hydrogen/*` (Neon-owned docs; do not delete).
+
+F. INCREMENTAL IMPLEMENTATION TASKS
+-----------------------------------
+1. Create and switch to dedicated feature branch without losing untracked files:
+     git checkout -b rozu/port-bringup
+2. Update `.gitignore` to ensure ALL of the following are ignored (preserve
+   existing useful entries like `*.iso`, `SLUS_*`, `*.irx`, `*.rpk`, `*.ara`,
+   `*.pss`, `*.str`, `*.bin`):
+     build/
+     Port/generated/
+     Analysis/extracted/
+     Analysis/oracle/
+     Emulator/
+     Tools/pcsx2-oracle/
+     game_data/
+     memcards/
+     states/
+     *.state
+     *.ps2
+     *.elf
+     *.ELF
+     *.gs
+     *.gsr
+     *.dmp
+     *.pdb
+     *.wav
+     rozu.ini
+     sotc.ini
+   Verify with `git check-ignore -v` on sample paths (`Game/Rule of Rose (USA).iso`,
+   `Port/generated/foo.cpp`, `build/linux/test`, `memcards/Mcd001.ps2`).
+3. Register & populate `External/PS2Recomp` cleanly:
+   - Remove the empty placeholder dir `rmdir External/PS2Recomp` ONLY if empty.
+   - Add the submodule cleanly:
+       git submodule add -b main https://github.com/LightVelox/PS2Recomp.git External/PS2Recomp
+   - Checkout exact pinned commit:
+       git -C External/PS2Recomp checkout d06a4ab4a6902e0ae324f184c22581c3aa387c36
+4. Inspect `External/PS2Recomp/ps2xRuntime/src/lib/gs/gpu/` (`gs_gl.*`,
+   `gs_gpu_backend.cpp`), `ps2xRuntime/CMakeLists.txt`, and `ps2xAnalyzer/` to
+   verify Linux buildability and record exact WGL/GLX/FFmpeg behavior in `handoff.txt`.
+5. Configure and build `External/PS2Recomp` standalone (into git-ignored
+   `build/engine_check/`) with `-DPS2X_BUILD_RECOMP=ON -DPS2X_BUILD_ANALYZER=ON
+   -DPS2X_BUILD_RUNTIME=ON -DPS2X_BUILD_TEST=ON -DPS2X_BUILD_STUDIO=OFF
+   -DPS2X_ENABLE_DEBUG_UI=OFF -DPS2X_ENABLE_FFMPEG=OFF`.
+   (Note: `FFMPEG=OFF` here tests engine baseline cleanly on this host where
+   `libavcodec-dev` is not yet installed; record FFmpeg package availability.)
+6. Run `ctest --test-dir build/engine_check --output-on-failure` and smoke-test
+   `ps2_recomp` and `ps2xAnalyzer` binaries.
+
+G. EXPLICIT COMMANDS (OS/TOOLCHAIN-AWARE)
+-----------------------------------------
+Linux (current Ubuntu host):
+  git status --short --branch && git rev-parse HEAD
+  git checkout -b rozu/port-bringup
+  # after editing .gitignore:
+  git check-ignore -v "Game/Rule of Rose (USA).iso" "Port/generated/test.cpp" "build/x" "memcards/Mcd001.ps2"
+  # initialize submodule:
+  rmdir External/PS2Recomp
+  git submodule add -b main https://github.com/LightVelox/PS2Recomp.git External/PS2Recomp
+  git -C External/PS2Recomp checkout d06a4ab4a6902e0ae324f184c22581c3aa387c36
+  # build & test engine:
+  cmake -S External/PS2Recomp -B build/engine_check -G Ninja \
+    -DCMAKE_BUILD_TYPE=RelWithDebInfo \
+    -DPS2X_BUILD_RECOMP=ON -DPS2X_BUILD_ANALYZER=ON -DPS2X_BUILD_RUNTIME=ON \
+    -DPS2X_BUILD_TEST=ON -DPS2X_BUILD_STUDIO=OFF \
+    -DPS2X_ENABLE_DEBUG_UI=OFF -DPS2X_ENABLE_FFMPEG=OFF -DPS2X_ENABLE_SCCACHE=OFF
+  cmake --build build/engine_check --target ps2_recomp ps2_analyzer ps2x_tests ps2_iop_emulator_tests
+  # (Inspect actual target names in build/engine_check via `ninja -C build/engine_check -t targets` if ps2_analyzer differs!)
+  mkdir -p build/test_artifacts/G0a
+  ctest --test-dir build/engine_check --output-on-failure | tee build/test_artifacts/G0a/ctest.log
+
+Windows x64 (reference equivalent):
+  Use `Tools\win\vsenv.cmd` + Ninja with the same CMake flags (and verify
+  `-DPS2X_ENABLE_FFMPEG=ON` works on Windows via auto-fetched prebuilt FFmpeg).
+
+H. ACCEPTANCE TESTS (PASS/FAIL THRESHOLDS)
+------------------------------------------
+1. `.gitignore` verification: `git check-ignore` exits `0` for ISO, generated
+   code, build dir, memcard, savestate, ELF, and oracle paths.
+2. Submodule verification: `git submodule status` reports clean pin at
+   `d06a4ab4a6902e0ae324f184c22581c3aa387c36` (or clean `rozu-port` SHA if a
+   minimal Linux build fix was committed).
+3. Tool binaries exist and execute without crashing:
+   `ps2_recomp` and `ps2xAnalyzer` binary print usage text when invoked with
+   `--help` (or no args).
+4. Engine unit tests: `ctest --test-dir build/engine_check --output-on-failure`
+   exits `0` with **100% tests passing** (`ps2x_tests` + `ps2_iop_emulator_tests`).
+   Save full log to `build/test_artifacts/G0a/ctest.log`.
+
+I. PCSX2 / ORIGINAL BEHAVIOR COMPARISON METHOD
+----------------------------------------------
+Not applicable to M00 (engine & repo hygiene baseline; no game code executed).
+Validate PS2 hardware semantics via `ps2x_tests` and `ps2_iop_emulator_tests`
+(which encode verified PS2 EE/FPU/VU0/GS/IOP/SPU2/SIO2 behavior).
+
+J. FAILURE TRIAGE
+-----------------
+- If `cmake` fails fetching raylib/fmt/etc. due to network or missing X11/OpenGL
+  dev headers on Linux, inspect exact error, check installed `-dev` packages,
+  and report clearly without faking success.
+- If `gs_gpu_backend.cpp` or `gs_gl.cpp` fails to compile on Linux due to WGL
+  Win32 headers, check how `ps2xRuntime/CMakeLists.txt` gates GPU backend on
+  non-Windows; apply a clean `#if defined(_WIN32)` guard (falling back cleanly
+  to `GSCpuBackend` on Linux) on branch `rozu-port` inside `External/PS2Recomp`,
+  verify all `ctest` tests pass, and document the WGL limitation honestly.
+- If any `ps2x_tests` or `ps2_iop_emulator_tests` test fails, isolate the exact
+  failing test name, fix root cause, and re-run before committing.
+
+K. SAFETY + GIT COMMIT CHECKPOINT
+---------------------------------
+1. Check `git status --short`, current branch (`rozu/port-bringup`), `HEAD`, and
+   `git submodule status`.
+2. Review `git diff` and `git diff --check`. Verify ZERO proprietary files,
+   ISOs, ELFs, IRXs, or build artifacts are staged.
+3. Stage ONLY approved files for M00 (DO NOT use `git add -A`!):
+     git add .gitignore .gitmodules External/PS2Recomp handoff.txt \
+       architecture/ gemini_hydrogen/
+   (Stage `architecture/` and `gemini_hydrogen/` here so Neon's baseline docs
+   are safely preserved in version control; leave untracked SOTC files untouched
+   for M01 cleanup!)
+4. Commit:
+     git commit -m "M00: harden gitignore, pin PS2Recomp submodule, verify engine build & tests"
+5. Record the resulting commit SHA in `handoff.txt` (or note it cleanly in the
+   next step without creating noisy recursive commits).
+6. Check `git status --short` and report exact remaining untracked files (the
+   pre-existing SOTC files awaiting M01).
+7. Do NOT push, force-push, rebase, or tag unless the user explicitly asks.
+
+L. HANDOFF UPDATE INSTRUCTIONS
+------------------------------
+Update `./handoff.txt` with:
+- Exact pinned `External/PS2Recomp` SHA (and `rozu-port` branch if created);
+- Exact `cmake`, `ninja`, `ctest` commands run, exit codes, pass counts (e.g.,
+  `477/477 ps2x_tests`, `6/6 IOP tests`), and `build/test_artifacts/G0a/ctest.log`;
+- Verified findings on Linux `gs_gl`/WGL and FFmpeg dev-lib status;
+- Branch name (`rozu/port-bringup`) and M00 commit SHA;
+- Timestamped progress log entry (append-only — keep Neon's entries intact!).
+
+M. STOP CONDITION
+-----------------
+STOP after M00 is committed and `handoff.txt` is updated.
+Report:
+  1. Exact files changed/staged and commit SHA (parent + submodule if modified);
+  2. Exact `ctest` counts and tool binary verification evidence;
+  3. Any Linux vs Windows build findings (WGL/FFmpeg/headers);
+  4. Next step identifier: `gemini_hydrogen/Gemini_Step_002.txt` (M01).
+Do NOT proceed into M01 in the same turn.
+================================================================================

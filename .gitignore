@@ -50,3 +50,26 @@ SLPS_*
 *.STR
 *.ara
 *.ARA
+
+# Build outputs, generated code, oracle artifacts, and runtime state (NEVER COMMIT)
+build/
+Port/generated/
+Analysis/extracted/
+Analysis/oracle/
+Emulator/
+Tools/pcsx2-oracle/
+game_data/
+memcards/
+states/
+*.state
+*.ps2
+*.elf
+*.ELF
+*.vutext
+*.gs
+*.gsr
+*.dmp
+*.pdb
+*.wav
+rozu.ini
+sotc.ini

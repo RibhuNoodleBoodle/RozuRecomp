@@ -1,0 +1,158 @@
+================================================================================
+GEMINI_STEP_008.TXT — MILESTONE M07 (GATE G4b) [CONDITIONAL]
+TITLE SCREEN & MENU NAVIGATION, DUALSHOCK 2 PAD INPUT, AND RXSNDDRV AUDIO
+================================================================================
+
+STATUS: CONDITIONAL — UNBLOCKED ONLY AFTER M06 (GATE G4a) PASSES.
+All menu addresses, field numbers, and `RXSNDDRV.IRX` audio findings MUST come
+from actual M06/M07 runtime logs — NEVER guess offsets!
+
+A. ROLE
+-------
+You are GEMINI HYDROGEN, the implementation and testing agent.
+
+B. OBJECTIVE & PREREQUISITES
+----------------------------
+Objective:
+  Reach Rule of Rose's Title Screen and Main Menu reliably, prove responsive
+  controller + keyboard DualShock 2 input (`DS1O_D.IRX` -> `DBCMAN.IRX` ->
+  `libpad2`), verify genuine menu SFX + title BGM via `RXSNDDRV.IRX` ->
+  `LIBSD.IRX` -> `IopSpu2`, and complete Gate G4!
+
+Prerequisites:
+  - M06 (`Gemini_Step_007.txt`) committed with Gate G4a PASS.
+  - `handoff.txt` records the exact field where the Title Screen appears and
+    the `RXSNDDRV.IRX` `libsd` ordinal trace from M06.
+
+Acceptance Criteria (Gate G4b / Full G4):
+  - Scripted pad input (`PS2X_PAD_SCRIPT`) advances from Title Screen (`START` /
+    `CROSS`) into Main Menu and moves the menu cursor (`UP`/`DOWN`) with
+    measurable visual diff in rendered frames AND guest RAM/menu state change!
+  - Audio capture (`Tools/audio_check.py`) confirms non-silent 48 kHz stereo
+    output for BOTH menu cursor SFX (`cursor_move` / `.SE` ADPCM) AND title
+    music (`.STR` / `XSEQ`), with zero clipping/underrun storm or SPU2 deadlock.
+  - Controller-first gamepad + sensible keyboard bindings verified in `rozu.ini`
+    (no SOTC mouse camera, no forced right-stick inversion).
+  - Dual-run deterministic GS VRAM hash match PASSES across the scripted menu
+    navigation sequence.
+
+C. READ FIRST
+-------------
+1. Read `./handoff.txt` completely (check M06 `RXSNDDRV` `libsd` trace!).
+2. Read `architecture/unknowns_and_risks.md` (R7 AutoDMA PCM gap),
+   `architecture/rule_of_rose_binary_profile.md` (Section 4.2 `RXSNDDRV.IRX`),
+   and `architecture/decisions.md` (ADR-009).
+3. Inspect `External/PS2Recomp/ps2xIOP/src/emulator/devices/iop_spu2.cpp` and
+   `External/PS2Recomp/ps2xRuntime/src/lib/ps2_host_input.cpp`.
+
+D. EVIDENCE
+-----------
+CONFIRMED FACTS:
+- `IOPCONF.CNF` loads byte-identical `SIO2MAN.IRX`, `SIO2D.IRX`, `DBCMAN.IRX`,
+  and `PAD2/DS1O_D.IRX` (proven in `sotc-vibe-pc`).
+- `RXSNDDRV.IRX` imports `libsd` v1.05 ordinals `[4..11, 13, 15, 17, 18, 20, 23, 26]`:
+  - Ordinal 17 = `sceSdVoiceTrans` (SPU2 RAM ADPCM upload)
+  - Ordinal 18 = `sceSdBlockTrans` (SPU2 AutoDMA PCM streaming!)
+- `Docs/ARCHITECTURE.md:196-197` confirmed `IopSpu2` did NOT yet implement
+  AutoDMA PCM input (`sceSdBlockTrans`), reverb, noise, or SPU2 IRQ address.
+- `/DATA/SND/XV/G000_TBL.BIN` begins with `"cursor_move"`; `/DATA/SND/XWS/STR_TBL.BIN`
+  lists `.STR` music/voice streams.
+
+HYPOTHESIS TO TEST DIRECTLY IN THIS STEP:
+- If M06/M07 logs show `RXSNDDRV.IRX` calling `libsd` ordinal 18 (`sceSdBlockTrans`),
+  implementing generic SPU2 AutoDMA PCM ring + half-buffer IRQ callbacks in
+  `External/PS2Recomp/ps2xIOP/src/emulator/devices/iop_spu2.cpp` (with unit tests
+  in `iop_spu2_tests.cpp`) will unlock `.STR` music, voices, and FMV audio!
+
+E. FILE-LEVEL IMPLEMENTATION SCOPE
+----------------------------------
+EDIT / CREATE:
+- `Port/src/rozu/config.cpp` — finalize Rule of Rose default gamepad/keyboard
+  bindings (standard PS2 survival-horror layout: D-pad/left-stick move, Cross
+  confirm/examine, Circle cancel/run, Square attack/command, Triangle inventory/
+  menu, R1 ready weapon, L1/L2 camera/target, Start pause, Select map).
+- `External/PS2Recomp` (branch `rozu-port`, ONLY if trace proves needed):
+  - Generic SPU2 AutoDMA PCM (`sceSdBlockTrans` / Core 0 & Core 1 AutoDMA DMA4/7
+    streaming + half-buffer transfer-complete IRQ) in `iop_spu2.cpp` + unit
+    tests in `ps2xIOP/tests/iop_spu2_tests.cpp`.
+  - Any generic `SIO2`/`VirtualDualShock2` fix if `DS1O_D` pad polling diverges.
+- `Tools/rozu_menu_check.py` — automated Gate G4b regression script: boots
+  deterministically through logo -> title -> presses `START` -> `DOWN` -> `DOWN`
+  -> `UP`, verifies frame diffs at each input step, verifies dual-run VRAM hash
+  equality, and runs `Tools/audio_check.py` on captured 48 kHz WAV/PCM.
+
+F. INCREMENTAL IMPLEMENTATION TASKS
+-----------------------------------
+1. Run `rozu` with `ROZU_TRACE=BOOT,IOP,INPUT,SPU2,GAME` to the Title Screen;
+   verify `DS1O_D` enters analog mode and `libpad2` delivers live buttons.
+2. Test scripted button presses (`PS2X_PAD_SCRIPT`) on the Title Screen and
+   Main Menu; dump frames before and after each press to prove real cursor
+   movement and menu transitions.
+3. Dump 48 kHz audio during Title Screen + cursor movement (`Tools/audio_check.py`)
+   and inspect `RXSNDDRV.IRX` `libsd` traces:
+   - Verify `.SE` ADPCM cursor SFX plays cleanly;
+   - If `.STR` / BGM uses `sceSdBlockTrans` (AutoDMA) and is silent or stalls,
+     implement generic AutoDMA PCM in `ps2xIOP/iop_spu2.cpp` + `iop_spu2_tests.cpp`
+     and re-verify!
+4. Finalize `Tools/rozu_menu_check.py` and run full Gate G4 verification.
+
+G. EXPLICIT COMMANDS
+--------------------
+Linux:
+  mkdir -p build/test_artifacts/G4b
+  cmake --build build/linux --target rozu ps2_iop_emulator_tests ps2x_tests
+  ctest --test-dir build/linux --output-on-failure | tee build/test_artifacts/G4b/ctest.log
+  python3 Tools/rozu_menu_check.py \
+    --exe build/linux/bin/rozu \
+    --iso "Game/Rule of Rose (USA).iso" \
+    --out build/test_artifacts/G4b | tee build/test_artifacts/G4b/menu_check.log
+
+H. ACCEPTANCE TESTS (PASS/FAIL THRESHOLDS)
+------------------------------------------
+1. `Tools/rozu_menu_check.py` exits `0`:
+   - Title screen rendered (non-black, verified PNG under `G4b/`);
+   - `START`/`CROSS` transitions to Main Menu (measurable pixel diff > 1%);
+   - `DOWN`/`UP` moves menu highlight (measurable pixel diff > 0.1% between
+     pre-press and post-press frames);
+   - Dual-run deterministic `.gsr` VRAM hashes match 100%;
+   - Audio dump has non-zero peak/RMS during menu/title and passes
+     `Tools/audio_check.py` with 0 fatal SPU2 errors.
+2. `ctest` exits `0` (including any new AutoDMA unit tests in `iop_spu2_tests`).
+
+I. PCSX2 / ORIGINAL BEHAVIOR COMPARISON METHOD
+----------------------------------------------
+Verify menu text, cursor highlight position, sound effect trigger on D-pad
+press, and NTSC 60 Hz pacing match retail `SLUS-21448`. When PCSX2 oracle is
+available, compare title/menu screenshots and `Tools/audio_check.py` waveforms.
+
+J. FAILURE TRIAGE
+-----------------
+- If pad input is ignored on title screen: log `SIO2` commands and `DS1O_D`
+  SIF DMA transfers to EE pad buffer; check whether Rule of Rose requires
+  DualShock 2 pressure-sensitivity config (`0x4F`) or specific poll cadence.
+- If audio crackles/stalls: separate EE slowdown from SPU2 decoding bugs by
+  inspecting offline deterministic PCM dump (`PS2X_AUDIO_DUMP`).
+
+K. SAFETY + GIT COMMIT CHECKPOINT
+---------------------------------
+1. Check `git status --short`, `git diff --check`, `git submodule status`.
+2. Commit `External/PS2Recomp` (`rozu-port`) first if `iop_spu2.cpp`/tests were
+   updated, then stage ONLY approved parent files:
+     git add Port/src/rozu/config.cpp Tools/rozu_menu_check.py handoff.txt \
+       [External/PS2Recomp if updated]
+3. Commit:
+     git commit -m "M07: verify title/menu navigation, DualShock 2 pad input, and RXSNDDRV audio (G4)"
+4. Report `git status --short`. No push.
+
+L. HANDOFF UPDATE INSTRUCTIONS
+------------------------------
+Update `./handoff.txt` with exact title/menu field numbers, verified pad script
+to enter Main Menu, `RXSNDDRV` audio status (ADPCM + AutoDMA verdict), Gate G4
+PASS evidence, commit SHAs, and append-only progress log.
+
+M. STOP CONDITION
+-----------------
+STOP after M07 commit and `handoff.txt` update.
+Report files changed, G4 menu/pad/audio evidence, commit SHA, remaining faults,
+and next step: `gemini_hydrogen/Gemini_Step_009.txt` (M08 — CONDITIONAL).
+================================================================================

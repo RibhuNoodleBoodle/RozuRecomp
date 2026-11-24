@@ -1,0 +1,188 @@
+================================================================================
+GEMINI_STEP_002.TXT — MILESTONE M01 (GATE G0b)
+RESET SOTC-ONLY ASSUMPTIONS & ESTABLISH CLEAN ROZURECOMP SKELETON
+================================================================================
+
+A. ROLE
+-------
+You are GEMINI HYDROGEN, the implementation and testing agent.
+
+B. OBJECTIVE & PREREQUISITES
+----------------------------
+Objective:
+  Eliminate all Shadow of the Colossus (`sotc`, `SCES-53326`, XFF, colossus,
+  Wander camera, widescreen/PAL hacks, hardcoded SOTC addresses) from the active
+  project tree, and build a clean, compiling, dual-platform (Windows MSVC +
+  Linux GCC) `RozuRecomp` skeleton containing ONLY generic reusable host
+  infrastructure under `Port/src/rozu/` and generic PS2 tools under `Tools/`.
+
+Prerequisites:
+  - M00 (`Gemini_Step_001.txt`) committed on `rozu/port-bringup` with Gate G0a PASS.
+  - `External/PS2Recomp` submodule cleanly pinned and passing `ctest`.
+
+Acceptance Criteria (Gate G0b):
+  - Zero SOTC game-specific targets, addresses, XFF scripts, or colossus harnesses
+    remain in active `CMakeLists.txt`, `Port/`, or `Tools/`.
+  - `Port/src/rozu/` generic utility library (`rozu_host_lib`: `log`, `sha256`,
+    `config`, `function_hooks`, `diagnostics`, `display`, `watchdog`,
+    `debug_script`) compiles cleanly with zero warnings/errors against
+    `ps2_runtime` on the local toolchain (and preserves MSVC flags for Windows).
+  - Root `CMakeLists.txt` (`project(RozuRecomp)`) configures cleanly when
+    `Port/generated/` does not yet exist, builds `ps2_recomp`, `ps2xAnalyzer`,
+    `vu1_recomp`, `rozu_host_lib`, and passes a small `rozu_host_unit_test` +
+    all `External/PS2Recomp` `ctest` tests.
+
+C. READ FIRST
+-------------
+1. Read `./handoff.txt` completely.
+2. Read `architecture/reuse_matrix.md` (strictly follow A/B/C/D classifications),
+   `architecture/rule_of_rose_port_architecture.md` (Section 2 layout), and
+   `architecture/decisions.md` (ADR-002, ADR-007, ADR-009).
+3. Run `git status --short --branch` and `git submodule status`.
+
+D. EVIDENCE
+-----------
+CONFIRMED FACTS (from `architecture/reuse_matrix.md`):
+- Reuse unchanged (A) under `Tools/`: `iso9660.py`, `pine.py`, `irx_imports.py`,
+  `gs_vram.py`, `gsdump.py`, `gsr_compare.py`, `gstrace_summary.py`,
+  `state_ram_extract.py`, `find_walk_delta.py`, `pystrings.py`, `vu0_corpus.py`,
+  `audio_check.py`, `frame_report.py`.
+- Adapt generically (B) from `Port/src/sotc/` into `Port/src/rozu/`:
+  - `sha256.{h,cpp}`, `log.{h,cpp}` (`ROZU_TRACE`), `function_hooks.{h,cpp}`
+  - `config.{h,cpp}` (`rozu.ini`, `ROZU_*` + `PS2X_*`, NTSC default, NO right-stick
+    inversion, NO mouse camera)
+  - `diagnostics.{h,cpp}` (from `module_guard.cpp`: keep `applyEeFloatingPointMode()`,
+    `ROZU_DUMP_RAM_AT`, `ROZU_TRACE_MEM`, `ROZU_TRACE_CALLS`; REMOVE `verifyModule()`
+    XFF check and hardcoded SOTC `0x001066E0`/`0x001073D0`/`0x00106770` addresses!)
+  - `display.{h,cpp}` (extract ONLY portable `configureHostDisplay()` from
+    `display_mode.cpp`; REMOVE all SOTC widescreen/PAL/menu hooks!)
+  - `watchdog.{h,cpp}` (REMOVE hardcoded `0x1C3070u`; parameterize present hook via
+    `ROZU_TIMELINE_HOOK`; keep Win32 stackwalk/watchpoints under `#if defined(_WIN32)`)
+  - `debug_script.{h,cpp}` (REMOVE `kDefaultHook = 0x001C35B0u`; require explicit
+    `ROZU_DEBUG_HOOK` env var)
+- Remove / Do Not Keep (D):
+  - `Port/profile/SCES-53326_v1.00.json`, `Port/recomp/sotc.toml`, `Port/assets/sotc.rc`
+  - `Port/src/sotc/hle/libgcc.*`, `idle_thread.*`, `mouse_camera*`, `motion_blur.*`,
+    `window_icon.*`, `display_mode.*`, `module_guard.*`, `hle/sce_cdvd.*`, `hle/sce_fileio.*`
+  - `Tools/sotc_link.py`, `Tools/xff.py`, `Tools/verify_reloc_sites.py`,
+    `Tools/scenario.py`, `Tools/golden_run.py`, `Tools/boot_milestones.py`,
+    `Tools/boot_phases.py`, `Tools/measure_boot.py`, `Tools/compare_ram.py`,
+    `Tools/state_check.py`, `Tools/performance_*.py`, `Tools/private_state_launch.ps1`,
+    `Tools/package_release.cmake`, `Tools/release/`
+  - SOTC-only `Docs/*` and `Analysis/*` (`ADDRESS_MAP.generated.csv` for SCES-53326,
+    `FUNCTION_NOTES.md`), and old SOTC `README.md` / `*.bat` referencing `sotc.exe`.
+
+E. FILE-LEVEL IMPLEMENTATION SCOPE
+----------------------------------
+CREATE / EDIT:
+- `CMakeLists.txt` — `project(RozuRecomp LANGUAGES C CXX)`, enable
+  `PS2X_BUILD_RECOMP ON`, `PS2X_BUILD_ANALYZER ON`, `PS2X_BUILD_RUNTIME ON`,
+  configurable `ROZU_ENABLE_FFMPEG` (default ON on WIN32, auto-detect via
+  pkg-config on Linux), `add_subdirectory(External/PS2Recomp EXCLUDE_FROM_ALL)`,
+  `vu1_recomp` target, `add_subdirectory(Port)`.
+- `CMakePresets.json` — clean presets for `linux-gcc` and `win-msvc`.
+- `Port/CMakeLists.txt` — always builds `rozu_host_lib` + `rozu_host_unit_test`;
+  conditionally adds `rozu_game_code` and `rozu` executable when
+  `Port/generated/register_functions.cpp` AND `Port/generated/rozu_layout_generated.h`
+  exist. Include proper FP flags: MSVC `/fp:precise /bigobj`, GCC/Clang
+  `-fno-fast-math -ffp-contract=off -fno-associative-math`.
+- `Port/src/rozu/{log,sha256,config,function_hooks,diagnostics,display,watchdog,debug_script}.{h,cpp}`
+- `Port/tests/rozu_host_unit_test.cpp` — tests `Sha256::hex` (known test vector),
+  `config::load` (temp ini parse + `ROZU_`/`PS2X_` key filtering), and
+  `applyEeFloatingPointMode()` (verify SSE MXCSR RTZ+FTZ+DAZ bits set).
+- `README.md` — concise, honest Rule of Rose (`RozuRecomp`) README with GPL-3.0
+  attribution to `LightVelox/sotc-vibe-pc`, `LightVelox/PS2Recomp`, `ran-j/PS2Recomp`,
+  raylib, ELFIO, rabbitizer, fmt, toml11; explicitly noting current bring-up status
+  ("M01 skeleton — not yet booted or playable").
+- `LICENSE`, `.gitattributes`, `Game/PLACE-YOUR-ISO-HERE.txt` (updated for Rule of
+  Rose `SLUS-21448` v1.00 — do NOT touch `Game/Rule of Rose (USA).iso`!).
+- Clean Windows helper scripts (`configure.bat`, `build.bat`, `run.bat`,
+  `Tools/win/vsenv.cmd`) updated for `rozu.exe`, plus `Tools/disasm.py` updated
+  for `rozu` paths.
+
+REMOVE (untracked SOTC leftovers):
+- Remove SOTC-only files listed in Section D ONLY after verifying none contain
+  user-authored Rule of Rose edits (`git status` confirms they are copied SOTC
+  files). NEVER touch `Game/Rule of Rose (USA).iso` or
+  `Google_Neon_Rule_of_Rose_Recomp_Architect.txt`.
+
+LEAVE ALONE:
+- `External/PS2Recomp` (no changes needed in M01).
+
+F. INCREMENTAL IMPLEMENTATION TASKS
+-----------------------------------
+1. Audit remaining untracked SOTC files; confirm none hold custom user work.
+2. Create `Port/src/rozu/` files adapted cleanly from `Port/src/sotc/` with
+   zero SOTC addresses, zero `SOTC_` env names, and clean `#if defined(_WIN32)`
+   guards so both Linux GCC and Windows MSVC compile cleanly.
+3. Update root `CMakeLists.txt`, create `CMakePresets.json`, update
+   `Port/CMakeLists.txt`, and write `Port/tests/rozu_host_unit_test.cpp`.
+4. Remove the SOTC-only files listed in Section D (keep all reusable `Tools/*.py`
+   from reuse_matrix Category A, `LICENSE`, `.gitattributes`, `Tools/win/vsenv.cmd`).
+5. Update `README.md` and `Game/PLACE-YOUR-ISO-HERE.txt` for Rule of Rose
+   (`SLUS-21448` v1.00).
+6. Run a grep audit across `CMakeLists.txt`, `Port/`, and `Tools/` to verify
+   zero lingering `SCES-53326`, `sotc_link`, `KERNEL.XFF`, `GAMECORE`, or
+   hardcoded SOTC hex addresses (`0x0134`, `0x0116`, `0x1DC9EC`, `0x001ABED0`).
+7. Configure, build, and run `rozu_host_unit_test` + `ps2x_tests` +
+   `ps2_iop_emulator_tests`.
+
+G. EXPLICIT COMMANDS (OS/TOOLCHAIN-AWARE)
+-----------------------------------------
+Linux:
+  cmake -S . -B build/linux -G Ninja -DCMAKE_BUILD_TYPE=RelWithDebInfo -DPS2X_BUILD_TEST=ON
+  cmake --build build/linux --target ps2_recomp ps2_analyzer vu1_recomp rozu_host_lib rozu_host_unit_test ps2x_tests ps2_iop_emulator_tests
+  mkdir -p build/test_artifacts/G0b
+  ./build/linux/Port/rozu_host_unit_test | tee build/test_artifacts/G0b/host_unit.log
+  ctest --test-dir build/linux --output-on-failure | tee build/test_artifacts/G0b/ctest.log
+  # SOTC leak check:
+  grep -rnE "SCES-53326|SCES_533|KERNEL\.XFF|GAMECORE|sotc_link|0x0134|0x0116|1DC9EC|001ABED0" CMakeLists.txt Port/ Tools/ || echo "CLEAN: zero SOTC leaks"
+
+H. ACCEPTANCE TESTS (PASS/FAIL THRESHOLDS)
+------------------------------------------
+1. `cmake -S . -B build/linux ...` exits `0` with clear status message noting
+   `Port/generated` is not yet produced (does not fail configure).
+2. All 7 targets compile with exit `0`.
+3. `rozu_host_unit_test` exits `0` (verifies SHA-256 of `"abc"` ==
+   `ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad`, INI
+   config parsing, and MXCSR RTZ+FTZ+DAZ mode).
+4. `ctest --test-dir build/linux --output-on-failure` exits `0` (100% pass).
+5. SOTC leak grep returns **0 matches** in `CMakeLists.txt`, `Port/`, `Tools/`.
+
+I. PCSX2 / ORIGINAL BEHAVIOR COMPARISON METHOD
+----------------------------------------------
+Verify `applyEeFloatingPointMode()` sets x86 MXCSR to exact EE hardware
+truncate-toward-zero + FTZ + DAZ (`_MM_ROUND_TOWARD_ZERO`, `_MM_FLUSH_ZERO_ON`,
+`_MM_DENORMALS_ZERO_ON`), matching PCSX2 EE chop semantics.
+
+J. FAILURE TRIAGE
+-----------------
+- If `display.cpp` pulls in raylib headers that conflict on Linux or fail to link
+  in `rozu_host_unit_test`, link `rozu_host_lib` against `ps2_runtime` (which
+  transitively exposes raylib) or separate `display.cpp` cleanly.
+- If `ps2xAnalyzer` target name differs from `ps2_analyzer`, inspect
+  `External/PS2Recomp/ps2xAnalyzer/CMakeLists.txt` and use the exact CMake target.
+
+K. SAFETY + GIT COMMIT CHECKPOINT
+---------------------------------
+1. Verify `git status --short`, branch `rozu/port-bringup`, `git submodule status`.
+2. Run `git diff --check`. Confirm ZERO proprietary/generated files are staged.
+3. Stage ONLY approved project files (never `git add -A`!):
+     git add CMakeLists.txt CMakePresets.json LICENSE .gitattributes README.md \
+       Game/PLACE-YOUR-ISO-HERE.txt Port/ Tools/ configure.bat build.bat run.bat handoff.txt
+4. Commit:
+     git commit -m "M01: remove SOTC-specific assumptions and build clean RozuRecomp host skeleton"
+5. Verify `git status --short` (only user's untracked prompt file `Google_Neon_Rule_of_Rose_Recomp_Architect.txt` should remain untracked). No push.
+
+L. HANDOFF UPDATE INSTRUCTIONS
+------------------------------
+Update `./handoff.txt` with M01 commit SHA, exact commands/exit codes,
+`build/test_artifacts/G0b/` log paths, exact `ps2xAnalyzer` CMake target name
+discovered, and append-only progress log entry.
+
+M. STOP CONDITION
+-----------------
+STOP after M01 commit and `handoff.txt` update.
+Report files changed, unit/ctest results, SOTC leak audit result, commit SHA,
+and next step: `gemini_hydrogen/Gemini_Step_003.txt` (M02).
+================================================================================

@@ -1,0 +1,136 @@
+================================================================================
+GEMINI_STEP_011.TXT — MILESTONE M10 (GATE G7) [CONDITIONAL]
+MEMORY CARD SAVE/LOAD (MCMAN/MCSERV), CHAPTER TRANSITIONS, FMV & COMBAT TESTS
+================================================================================
+
+STATUS: CONDITIONAL — UNBLOCKED ONLY AFTER M09 (GATE G6) PASSES.
+
+A. ROLE
+-------
+You are GEMINI HYDROGEN, the implementation and testing agent.
+
+B. OBJECTIVE & PREREQUISITES
+----------------------------
+Objective:
+  Verify Rule of Rose's core full-game systems through automated regression tests:
+  1. **Memory Card Save & Load (`MCMAN.IRX` + `MCSERV.IRX` / `libmc 3020`):**
+     format blank 8 MB `memcards/Mcd001.ps2`, save `/BASLUS-21448` in-game,
+     relaunch `rozu` fresh, verify `Load Game` lists and restores the exact
+     chapter/room/inventory state;
+  2. **Chapter Transitions:** transition cleanly across chapters (e.g., `CHAP00`
+     -> `CHAP01`+ with `MV02_TIT.PSS` / title-card FMVs and new `.RPK`/`.ARA`
+     streaming);
+  3. **Combat & Enemy AI (`EmyManager`, `MagLifePCModeAttacking`/`Damage`):**
+     verify combat hit detection, weapon swings, damage, healing, death FMV
+     (`DEATH_J.PSS`), and Brown's find-item/command mechanics;
+  4. **FMV & `.STR` Audio Streaming:** verify multiple `.PSS` cutscenes and
+     `.STR` audio streams back-to-back without resource/heap leaks!
+
+Prerequisites:
+  - M09 (`Gemini_Step_010.txt`) committed with Gate G6 PASS.
+
+Acceptance Criteria (Gate G7):
+  - Fresh `rozu` process formats `memcards/Mcd001.ps2` (exact 8,650,752 B =
+    16,384 x 528 B raw PS2 card), saves `/BASLUS-21448`, exits, relaunches in
+    a brand-new process, loads the save via `Load Game`, and enters the exact
+    saved room with matching player state!
+  - Chapter transition test (`CHAP00` -> `CHAP01`+) passes with 0 crashes/hangs.
+  - Combat & FMV/streaming regression tests pass with 0 SPU2/MPEG/heap leaks.
+  - `ctest` (including `iop_memcard` / `mcserv` / `iop_spu2` tests) passes 100%.
+
+C. READ FIRST
+-------------
+1. Read `./handoff.txt` completely.
+2. Read `architecture/unknowns_and_risks.md` (R5, R6 `MCMAN`/`MCSERV`, R7) and
+   `architecture/rule_of_rose_binary_profile.md` (Section 3.4 `/BASLUS-21448/*`).
+3. Inspect `External/PS2Recomp/ps2xIOP/src/modules/mcserv.cpp` and
+   `ps2xIOP/src/emulator/devices/iop_memcard.cpp`.
+
+D. EVIDENCE
+-----------
+CONFIRMED FACTS:
+- Rule of Rose uses `MCMAN.IRX` (v2.30) + `MCSERV.IRX` (v2.10) + `libmc 3020`,
+  writing `/BASLUS-21448/BASLUS-21448`, `icon.sys`, `slime1.ico`..`slime3.ico`.
+- Disc contains 13 chapter archives (`DATA/CH/00/CHAP00.RPK` .. `12/CHAP12.RPK`),
+  41 `.PSS` movies, 844 `.STR` streams, and 1,134 `.ARA` area files.
+
+UNKNOWN / TO VERIFY AT RUNTIME:
+- Whether `MCMAN.IRX` + `MCSERV.IRX` work natively on `iop_memcard` without
+  SIO2 ECC/erase/page-write bugs (SOTC tested `MC2_D`, NOT `MCMAN`+`MCSERV`!).
+- Whether repeated `.PSS` opens/closes leak FFmpeg contexts or IPU buffers in
+  `Stubs/MPEG.cpp`.
+
+E. FILE-LEVEL IMPLEMENTATION SCOPE
+----------------------------------
+CREATE / EDIT:
+- `Tools/rozu_regression_g7.py` — automated Gate G7 suite covering:
+  (1) blank memory card format -> save -> fresh process reload verification
+      (using an isolated copy of `memcards/Mcd001.ps2` so user saves are never
+      touched!);
+  (2) chapter transition + FMV title card check;
+  (3) combat & `.STR` streaming check.
+- `External/PS2Recomp` (branch `rozu-port`, generic fixes + unit tests ONLY if
+  real bugs appear in `MCMAN`/`MCSERV`/`iop_memcard`/`Stubs/MPEG.cpp`/`iop_spu2`).
+
+F. INCREMENTAL IMPLEMENTATION TASKS
+-----------------------------------
+1. Test in-game save point on a fresh isolated `memcards/Mcd001.ps2` with
+   `ROZU_TRACE=IOP,FILE,GAME`; inspect `MCMAN`/`MCSERV`/SIO2 logs.
+2. Fix any generic `iop_memcard` / `secrman` / `mcserv` issue in
+   `External/PS2Recomp` with a dedicated unit test in `ps2xIOP/tests/`.
+3. Verify fresh-process `Load Game` restores saved room and player state.
+4. Test chapter transition (`CHAP00` -> `CHAP01`), combat encounter, and back-to-
+   back `.PSS` FMV playback; verify no memory/FD/SPU2-heap leaks.
+5. Run `Tools/rozu_regression_g7.py` and archive logs under `build/test_artifacts/G7/`.
+
+G. EXPLICIT COMMANDS
+--------------------
+Linux:
+  mkdir -p build/test_artifacts/G7
+  cmake --build build/linux --target rozu ps2x_tests ps2_iop_emulator_tests
+  ctest --test-dir build/linux --output-on-failure | tee build/test_artifacts/G7/ctest.log
+  python3 Tools/rozu_regression_g7.py \
+    --exe build/linux/bin/rozu --iso "Game/Rule of Rose (USA).iso" \
+    --out build/test_artifacts/G7 | tee build/test_artifacts/G7/g7_suite.log
+
+H. ACCEPTANCE TESTS (PASS/FAIL THRESHOLDS)
+------------------------------------------
+1. `Tools/rozu_regression_g7.py` exits `0` with PASS on all 4 sub-suites
+   (save/load round-trip, chapter transition, combat, FMV/streaming).
+2. Output `Mcd001.ps2` is exact size `8,650,752` bytes and contains valid
+   `/BASLUS-21448` filesystem entries.
+3. `ctest` exits `0` (100% pass) and G4–G6 remain PASS.
+
+I. PCSX2 / ORIGINAL BEHAVIOR COMPARISON METHOD
+----------------------------------------------
+When PCSX2 + user BIOS are available: copy the port-created `Mcd001.ps2` into
+PCSX2 and confirm PCSX2 lists "8 MB, Formatted", sees the Rule of Rose save
+icon/slot, and loads it cleanly into the exact room; perform the reverse check
+(load a PCSX2-created `Mcd001.ps2` save inside `rozu`).
+
+J. FAILURE TRIAGE
+-----------------
+- Never fake save/load by intercepting `sceMcWrite` to host files unless genuine
+  `MCMAN`/`MCSERV` on `iop_memcard` is proven fundamentally blocked; prefer
+  authentic PCSX2-compatible `Mcd001.ps2` card images through `SIO2`.
+- Isolate any FMV crash to the exact `.PSS` filename and `sceMpeg*` call trace.
+
+K. SAFETY + GIT COMMIT CHECKPOINT
+---------------------------------
+1. Check `git status --short`, `git diff --check`, `git submodule status`.
+2. Confirm ZERO `.ps2`, `.state`, `.gsr`, or `Port/generated/` files are staged.
+3. Commit submodule first if modified; then commit approved parent files:
+     git commit -m "M10: pass G7 memory card save/load, chapter transition, FMV, and combat suite"
+4. Report `git status --short`. No push.
+
+L. HANDOFF UPDATE INSTRUCTIONS
+------------------------------
+Update `./handoff.txt` with Gate G7 PASS evidence, `Mcd001.ps2` PCSX2 cross-
+load status (verified or pending local PCSX2), commit SHAs, and progress log.
+
+M. STOP CONDITION
+-----------------
+STOP after M10 commit and `handoff.txt` update.
+Report files changed, G7 suite results, commit SHA, remaining faults, and next
+step: `gemini_hydrogen/Gemini_Step_012.txt` (M11 — CONDITIONAL).
+================================================================================

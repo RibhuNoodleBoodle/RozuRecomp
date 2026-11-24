@@ -1,0 +1,82 @@
+================================================================================
+GEMINI HYDROGEN STEP INDEX — ROZURECOMP (RULE OF ROSE SLUS-21448 v1.00)
+================================================================================
+
+Last Updated: 2026-11-24 01:18 +0530 (Google Neon High)
+First Step To Run: gemini_hydrogen/Gemini_Step_001.txt
+
+Legend
+------
+  READY       = Grounded in verified local repo/ELF evidence; ready to execute
+                once prerequisite step commits PASS.
+  CONDITIONAL = Architecture and acceptance gate are defined, but concrete
+                runtime fixes/addresses depend on logs/traces produced by
+                earlier milestones. Inspect runtime output first; never invent
+                offsets or patches.
+  BLOCKED     = Cannot start until explicit unblocking prerequisite passes.
+
+Step Table
+----------
+ID   | File                 | Gate | Readiness   | Prerequisite    | Summary & Unblocking Condition
+-----+----------------------+------+-------------+-----------------+-------------------------------------------------------------
+M00  | Gemini_Step_001.txt  | G0a  | READY       | None (HEAD      | Harden .gitignore, branch rozu/port-bringup, init/pin
+     |                      |      |             | 019f6de)        | External/PS2Recomp (d06a4ab4), verify Linux/Win CMake +
+     |                      |      |             |                 | build & pass ps2_recomp, ps2xAnalyzer, ps2x_tests, IOP tests.
+-----+----------------------+------+-------------+-----------------+-------------------------------------------------------------
+M01  | Gemini_Step_002.txt  | G0b  | READY       | M00 commit      | Strip SOTC-only targets/hooks/scripts/docs; create clean
+     |                      |      | (after M00) | (G0a PASS)      | RozuRecomp CMake & Port/src/rozu/ generic utilities; keep
+     |                      |      |             |                 | External/PS2Recomp isolated; verify ctest still 100% PASS.
+-----+----------------------+------+-------------+-----------------+-------------------------------------------------------------
+M02  | Gemini_Step_003.txt  | G1a  | READY       | M01 commit      | Create Port/profile/SLUS-21448_v1.00.json, Tools/ror_prepare.py
+     |                      |      | (after M01) | (G0b PASS)      | ISO validator + rozu_layout_generated.h emitter, and
+     |                      |      |             |                 | Port/src/rozu/game_disc.{h,cpp} + valid/wrong-ISO tests.
+-----+----------------------+------+-------------+-----------------+-------------------------------------------------------------
+M03  | Gemini_Step_004.txt  | G1b  | READY       | M02 commit      | Full SLUS_214.48 function discovery (.text + 1,449 linkonce.t
+     |                      |      | (after M02) | (G1a PASS)      | + 284 vtables + 4,025 jal; STRICT .vutext exclusion), run
+     |                      |      |             |                 | ps2xAnalyzer GPL SDK scanner, verify stubs, emit rozu.toml.
+-----+----------------------+------+-------------+-----------------+-------------------------------------------------------------
+M04  | Gemini_Step_005.txt  | G2   | READY       | M03 commit      | HARD FEASIBILITY POC: Tools/generate.py, recompile & execute
+     |                      |      | (after M03) | (G1b PASS)      | a small real SLUS_214.48 subset in rozu_poc_test, then full
+     |                      |      |             |                 | SLUS_214.48 ps2_recomp pass (0 decode fails) + compile lib.
+-----+----------------------+------+-------------+-----------------+-------------------------------------------------------------
+M05  | Gemini_Step_006.txt  | G3   | READY       | M04 commit      | Link full rozu executable; boot 0x00100008 in deterministic
+     |                      |      | (after M04) | (G2 PASS)       | CPU-GS headless mode; load all 9 IOPCONF.CNF modules + first
+     |                      |      |             |                 | cdrom0: reads; resolve missing functions/stubs cleanly.
+-----+----------------------+------+-------------+-----------------+-------------------------------------------------------------
+M06  | Gemini_Step_007.txt  | G4a  | CONDITIONAL | M05 commit      | UNBLOCKED BY: M05 boot log reaching FMV/logo init. Verify
+     |                      |      |             | (G3 PASS)       | CP_LOGO.PSS (PS2X_ENABLE_FFMPEG / MPEG / IPU), CRTC frames,
+     |                      |      |             |                 | first non-black verified video & initial RXSNDDRV audio.
+-----+----------------------+------+-------------+-----------------+-------------------------------------------------------------
+M07  | Gemini_Step_008.txt  | G4b  | CONDITIONAL | M06 commit      | UNBLOCKED BY: M06 reaching title screen. Verify DS1O_D/pad2
+     |                      |      |             | (G4a PASS)      | menu navigation, audio SFX+BGM (audit/implement IopSpu2
+     |                      |      |             |                 | AutoDMA PCM if RXSNDDRV uses sceSdBlockTrans), dual-run VRAM.
+-----+----------------------+------+-------------+-----------------+-------------------------------------------------------------
+M08  | Gemini_Step_009.txt  | G5   | CONDITIONAL | M07 commit      | UNBLOCKED BY: M07 menu input entering New Game. Advance past
+     |                      |      |             | (G4b PASS)      | MV01_OPE.PSS + LOADING.BIN + CHAP00.RPK + MAPUNIT.BIN into
+     |                      |      |             |                 | real i3d 3D scene/world initialization under game control.
+-----+----------------------+------+-------------+-----------------+-------------------------------------------------------------
+M09  | Gemini_Step_010.txt  | G6   | CONDITIONAL | M08 commit      | UNBLOCKED BY: M08 reaching interactive control. Run >= 10 min
+     |                      |      |             | (G5 PASS)       | (36,000 NTSC fields) controllable gameplay + Brown/doors/UI
+     |                      |      |             |                 | + F5/F9 save-state round-trip with 0 fatal faults.
+-----+----------------------+------+-------------+-----------------+-------------------------------------------------------------
+M10  | Gemini_Step_011.txt  | G7   | CONDITIONAL | M09 commit      | UNBLOCKED BY: M09 stable gameplay. Verify MCMAN/MCSERV saves
+     |                      |      |             | (G6 PASS)       | (/BASLUS-21448 on Mcd001.ps2), chapter transitions, FMV,
+     |                      |      |             |                 | combat, and .STR streaming automated regression suite.
+-----+----------------------+------+-------------+-----------------+-------------------------------------------------------------
+M11  | Gemini_Step_012.txt  | G8a  | CONDITIONAL | M10 commit      | UNBLOCKED BY: M10 passing G7. Build Tools/rozu_scenario.py
+     |                      |      |             | (G7 PASS)       | multi-chapter harness; verify extended/full-game playthrough
+     |                      |      |             |                 | coverage and fix remaining VU/GS/SPU2/MPEG edge cases.
+-----+----------------------+------+-------------+-----------------+-------------------------------------------------------------
+M12  | Gemini_Step_013.txt  | G8b  | CONDITIONAL | M11 commit      | UNBLOCKED BY: M11 fidelity baseline. Measure & optimize
+     |                      |      |             | (G8a PASS)      | (GSGpuBackend, MTVU, optional VU1 AOT), settings/rozu.ini,
+     |                      |      |             |                 | Windows/Linux packaging, clean-clone + ISO full rebuild test.
+
+Active Blockers to Track Across Steps
+-------------------------------------
+- B1 (M00): External/PS2Recomp is currently empty -> resolved in Step 001.
+- B2 (M00/M06): Local Ubuntu host lacks FFmpeg dev libs (libavcodec-dev etc.)
+  and PCSX2 oracle -> document honestly in Step 001; enable FFmpeg in M06
+  (either install system dev packages on Linux or test on Windows MSVC build).
+- B3 (M00/M12): Verify whether External/PS2Recomp GSGpuBackend supports Linux
+  OpenGL or is WGL-only -> inspect in Step 001; use portable GSCpuBackend
+  (PS2X_GS_GPU=0) for deterministic Linux bring-up M05–M10.

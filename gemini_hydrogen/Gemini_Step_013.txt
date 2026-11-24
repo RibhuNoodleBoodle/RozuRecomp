@@ -1,0 +1,155 @@
+================================================================================
+GEMINI_STEP_013.TXT — MILESTONE M12 (GATE G8b) [CONDITIONAL]
+PERFORMANCE, VU1 AOT, SETTINGS, PACKAGING & CLEAN-CLONE REPRODUCTION
+================================================================================
+
+STATUS: CONDITIONAL — UNBLOCKED ONLY AFTER M11 (GATE G8a) PASSES.
+Never promise an FPS target before measuring; log host hardware, guest logic
+pacing vs host FPS, p50/p95/p99 frametimes, shader stalls, and dropped frames!
+
+A. ROLE
+-------
+You are GEMINI HYDROGEN, the implementation and testing agent.
+
+B. OBJECTIVE & PREREQUISITES
+----------------------------
+Objective:
+  Bring `RozuRecomp` to release-grade reproducibility, measured performance,
+  clean user configuration, and verified clean-clone reconstruction:
+  1. Benchmark deterministic baseline (`GSCpuBackend` + VU1 interpreter) vs
+     accelerated modes (`GSGpuBackend`, `MTVU`, optional `vu1_recomp` AOT for
+     Rule of Rose's `.vutext` microprograms — verified bit-exact via
+     `PS2X_VU1_VERIFY=1`!);
+  2. Polish user-facing `rozu.ini` settings & documentation (`Docs/CONFIGURATION.md`,
+     `Docs/PERFORMANCE.md`, `Docs/GAME_BUILD.md`, `README.md`);
+  3. Add clean Windows x64 + Linux packaging (`Tools/package_release.cmake`,
+     `setup.bat`, `package-release.bat`) with strict legal asset exclusion audit;
+  4. Prove **clean-clone reproduction** in a fresh directory (`git clone
+     --recursive` + user's own `SLUS-21448` ISO -> `Tools/generate.py` -> full
+     build -> G0..G7 smoke pass).
+
+Prerequisites:
+  - M11 (`Gemini_Step_012.txt`) committed with Gate G8a PASS.
+
+Acceptance Criteria (Gate G8b / Final):
+  - Performance measurements recorded in `Docs/PERFORMANCE.md` with exact CPU,
+    GPU, OS, resolution, guest NTSC 60 Hz logic rate vs host FPS, p50/p95/p99
+    frametimes, shader compile stalls, and dropped frame counts.
+  - If `vu1_recomp` AOT is enabled, `PS2X_VU1_VERIFY=1` reports **0 mismatches**
+    against the VU1 interpreter across captured gameplay scenes!
+  - Clean-clone reproduction in a fresh git-ignored temp checkout (`build/clean_clone_test/`)
+    regenerates `Port/generated/` from `Game/Rule of Rose (USA).iso`, builds
+    `rozu` cleanly, and passes `ctest` + boot/menu/gameplay verification!
+  - Release package audit proves ZERO copyrighted files (`*.iso`, `SLUS_214.48`,
+    `*.irx`, `*.pss`, `*.rpk`, `*.ara`, BIOS, saves) are bundled.
+
+C. READ FIRST
+-------------
+1. Read `./handoff.txt` completely.
+2. Read `architecture/build_and_test_strategy.md` (Section 1 & Gate G8) and
+   `architecture/rule_of_rose_port_architecture.md` (Section 5 submodule policy).
+
+D. EVIDENCE
+-----------
+CONFIRMED FACTS:
+- `SLUS_214.48` `.vutext` (`0x00291230..0x002953B0`, `0x4180` B) has 44 VIF
+  `MPG` packets that can optionally be captured at runtime via `PS2X_VU1_CAPTURE`
+  and AOT-compiled via `vu1_recomp` (`Port/CMakeLists.txt` `rozu_vu1_code`).
+- `GSGpuBackend` requires OpenGL 4.6 (verified WGL on Windows; verify Linux
+  status from M00 findings before making any Linux GPU claim!).
+
+E. FILE-LEVEL IMPLEMENTATION SCOPE
+----------------------------------
+CREATE / EDIT:
+- `Tools/rozu_perf_bench.py` — reproducible benchmark runner logging hardware
+  specs, guest updates/s vs host FPS, p50/p95/p99 frametimes, and dropped frames.
+- `Tools/generate.py` — optional `--with-vu1` flag to invoke `vu1_recomp` on
+  captured Rule of Rose VU1 images (`PS2X_VU1_CAPTURE` -> `Port/generated/vu1/`).
+- `Tools/package_release.cmake`, `setup.bat`, `package-release.bat`,
+  `Tools/release/Play.bat`, `Tools/release/README.txt`,
+  `Tools/release/PLACE-YOUR-ISO-HERE.txt` — clean Rule of Rose packaging scripts
+  (strictly excluding any game binary/asset/BIOS/save).
+- `Docs/GAME_BUILD.md`, `Docs/CONFIGURATION.md`, `Docs/PERFORMANCE.md`, `README.md`
+  — accurate, measured, honest Rule of Rose documentation.
+
+F. INCREMENTAL IMPLEMENTATION TASKS
+-----------------------------------
+1. Profile gameplay scenes (deterministic baseline first, then `MTVU`,
+   `GSGpuBackend` on supported OS/GPU, and optional `vu1_recomp` AOT).
+2. If enabling `vu1_recomp` AOT, run `PS2X_VU1_VERIFY=1` across gameplay scenes
+   and confirm 0 mismatches before making it default.
+3. Implement `Tools/package_release.cmake` + Windows `setup.bat` / `Play.bat`
+   and audit archive contents to prove zero proprietary files are packaged.
+4. Perform full clean-clone test into `build/clean_clone_test/` using local
+   `git clone --recursive . build/clean_clone_test`, generate from
+   `Game/Rule of Rose (USA).iso`, build, and run `ctest` + boot/menu checks.
+5. Update all user docs (`README.md`, `Docs/*.md`) with measured numbers only.
+
+G. EXPLICIT COMMANDS
+--------------------
+Linux:
+  mkdir -p build/test_artifacts/G8b
+  python3 Tools/rozu_perf_bench.py \
+    --exe build/linux/bin/rozu --iso "Game/Rule of Rose (USA).iso" \
+    --out build/test_artifacts/G8b/perf | tee build/test_artifacts/G8b/perf.log
+  # Clean-clone reproduction test (inside git-ignored build/):
+  rm -rf build/clean_clone_test
+  git clone --recursive . build/clean_clone_test
+  (cd build/clean_clone_test && \
+    cmake -S . -B build/linux -G Ninja -DCMAKE_BUILD_TYPE=RelWithDebInfo -DPS2X_BUILD_TEST=ON && \
+    cmake --build build/linux --target ps2_recomp ps2_analyzer ps2x_tests ps2_iop_emulator_tests && \
+    ctest --test-dir build/linux --output-on-failure && \
+    python3 Tools/generate.py --iso "../../Game/Rule of Rose (USA).iso" && \
+    cmake -S . -B build/linux -G Ninja && \
+    cmake --build build/linux --target rozu && \
+    python3 Tools/rozu_boot_check.py --exe build/linux/bin/rozu --iso "../../Game/Rule of Rose (USA).iso" --fields 300 --timeout 120 --runs 1 --out build/clean_boot) \
+    | tee build/test_artifacts/G8b/clean_clone.log
+
+H. ACCEPTANCE TESTS (PASS/FAIL THRESHOLDS)
+------------------------------------------
+1. Performance benchmark exits `0` and logs complete hardware + percentile
+   frametime + guest vs host FPS metrics (zero unmeasured claims).
+2. If VU1 AOT enabled, `PS2X_VU1_VERIFY=1` logs **0 mismatches**.
+3. Clean-clone test exits `0` end-to-end from fresh clone + ISO to verified
+   `rozu` boot + 100% `ctest` pass.
+4. Package manifest audit confirms **0** proprietary/copyrighted files included.
+5. All gates G0–G8b verified PASS.
+
+I. PCSX2 / ORIGINAL BEHAVIOR COMPARISON METHOD
+----------------------------------------------
+Verify accelerated modes (`GSGpuBackend`, `MTVU`, `vu1_recomp`) maintain
+identical game timing (NTSC 60 Hz logic clock) and visual fidelity compared to
+the deterministic `GSCpuBackend` baseline (and PCSX2 oracle when available).
+
+J. FAILURE TRIAGE
+-----------------
+- If clean-clone build fails due to an uncommitted local file or unpinned
+  submodule change, fix the missing tracked file or submodule pin immediately
+  and re-run the clean-clone test from scratch!
+- If any optimization alters game logic timing or breaks determinism tests,
+  revert or gate it behind an opt-in `rozu.ini` flag.
+
+K. SAFETY + GIT COMMIT CHECKPOINT
+---------------------------------
+1. Delete `build/clean_clone_test` after archiving `clean_clone.log` so disk
+   space is clean.
+2. Check `git status --short`, `git diff --check`, `git submodule status`.
+3. Verify ZERO proprietary assets, ISOs, generated C++, saves, or packages are
+   staged.
+4. Commit submodule first if modified; then commit ONLY approved parent files:
+     git commit -m "M12: finalize performance benchmarks, packaging, docs, and clean-clone verification (G8)"
+5. Report `git status --short`. No automatic push unless user explicitly asks.
+
+L. HANDOFF UPDATE INSTRUCTIONS
+------------------------------
+Update `./handoff.txt` with final Gate G8 PASS evidence, measured performance
+table, clean-clone log path, final parent + submodule SHAs, and final progress
+log entry.
+
+M. STOP CONDITION
+-----------------
+STOP after M12 commit and final `handoff.txt` update.
+Deliver final summary: files changed, clean-clone & G0–G8 evidence, commit SHAs,
+any documented remaining quirks/platform limitations, and state that M00–M12
+bring-up plan is complete.
+================================================================================
