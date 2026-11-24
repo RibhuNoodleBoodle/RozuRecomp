@@ -1,0 +1,52 @@
+{
+  "version": 6,
+  "configurePresets": [
+    {
+      "name": "linux-gcc",
+      "displayName": "Linux x64 (GCC / Ninja, RelWithDebInfo)",
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/build/linux",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "RelWithDebInfo",
+        "PS2X_BUILD_TEST": "ON"
+      }
+    },
+    {
+      "name": "win-msvc",
+      "displayName": "Windows x64 (MSVC / Ninja, RelWithDebInfo)",
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/build/port",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "RelWithDebInfo",
+        "PS2X_BUILD_TEST": "ON",
+        "ROZU_ENABLE_FFMPEG": "ON"
+      }
+    }
+  ],
+  "buildPresets": [
+    {
+      "name": "linux-gcc",
+      "configurePreset": "linux-gcc"
+    },
+    {
+      "name": "win-msvc",
+      "configurePreset": "win-msvc"
+    }
+  ],
+  "testPresets": [
+    {
+      "name": "linux-gcc",
+      "configurePreset": "linux-gcc",
+      "output": {
+        "outputOnFailure": true
+      }
+    },
+    {
+      "name": "win-msvc",
+      "configurePreset": "win-msvc",
+      "output": {
+        "outputOnFailure": true
+      }
+    }
+  ]
+}

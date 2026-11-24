@@ -60,42 +60,40 @@ HANDOFF.TXT — RULE OF ROSE (PS2) NATIVE PC STATIC RECOMPILATION
 
 4. BRANCH, HEAD SHA, WORKTREE STATUS, UNCOMMITTED CHANGES
 ---------------------------------------------------------
-- Branch: `rozu/port-bringup` (branched from `main` at `019f6deab05a8d3a11763f60e61355f53883583d`)
-- Worktree status: M00 files (`.gitignore`, `.gitmodules`, `External/PS2Recomp`,
-  `handoff.txt`, `architecture/`, `gemini_hydrogen/`) staged and committed on
-  `rozu/port-bringup`. Pre-existing untracked `sotc-vibe-pc` files + user's
-  `Google_Neon_Rule_of_Rose_Recomp_Architect.txt` remain untracked awaiting M01.
+- Branch: `rozu/port-bringup` (M00 commit `dba95aec6650c5d22f5909e2efd7b98239528372`)
+- Worktree status: M01 cleanup & skeleton files staged and committed on
+  `rozu/port-bringup`. Only user's untracked `Google_Neon_Rule_of_Rose_Recomp_Architect.txt`
+  (plus git-ignored `Game/Rule of Rose (USA).iso` and `build/`) remains untracked.
 - Ownership: Hydrogen owns all implementation/build/test/commit steps from M00 onward.
 
 5. CURRENT PHASE + ACTIVE STEP ID + % STATUS (ESTIMATE)
 -------------------------------------------------------
-- Current Phase: M00 (Gate G0a) COMPLETE -> Ready for M01 (Gate G0b)
-- Active Step ID: Completed `gemini_hydrogen/Gemini_Step_001.txt` (M00 / Gate G0a);
-  next is `gemini_hydrogen/Gemini_Step_002.txt` (M01 / Gate G0b).
+- Current Phase: M01 (Gate G0b) COMPLETE -> Ready for M02 (Gate G1a)
+- Active Step ID: Completed `gemini_hydrogen/Gemini_Step_002.txt` (M01 / Gate G0b);
+  next is `gemini_hydrogen/Gemini_Step_003.txt` (M02 / Gate G1a).
 - Architecture / Planning Status: 100% COMPLETE (estimate)
 - Implementation / Build / Boot / Playable Status:
-  - Planned: M00–M12 (M01–M05 READY; M06–M12 CONDITIONAL)
-  - Implemented: ~8% (M00 baseline complete: gitignore, PS2Recomp submodule, engine build/tests)
-  - Built: Engine tools + tests built (`build/engine_check/`)
+  - Planned: M00–M12 (M02–M05 READY; M06–M12 CONDITIONAL)
+  - Implemented: ~16% (M00–M01 complete: clean RozuRecomp CMake + `Port/src/rozu/` host skeleton)
+  - Built: `ps2_recomp`, `ps2_analyzer`, `vu1_recomp`, `rozu_host_lib`, `rozu_host_unit_test`, `ps2x_tests`, IOP/GS tests (`build/linux/`)
   - Booted: NOT YET
   - Playable: NOT YET
 
 6. COMPLETED MILESTONES + PASS EVIDENCE + COMMITS
 -------------------------------------------------
 - Neon Phase A–D COMPLETE: `architecture/*`, `gemini_hydrogen/*`, `handoff.txt`.
-- Hydrogen M00 (Gate G0a) COMPLETE on branch `rozu/port-bringup`:
-  - `.gitignore` hardened & verified with `git check-ignore -v` (17/17 paths ignored, exit 0).
-  - `External/PS2Recomp` pinned on `rozu-port` @ `8ba3cd8713d91bdec4ff44bde902c00d9eae2592`
-    (from `d06a4ab4a6902e0ae324f184c22581c3aa387c36`).
-  - Built `ps2_recomp`, `ps2_analyzer`, `ps2x_tests`, 6 `ps2_iop_*` test binaries,
-    and 3 `ps2_gs_*_cache_tests` binaries under GCC 15.2 + Ninja (`-msse4.1`).
-  - `ps2_recomp` & `ps2_analyzer` usage verified (exit 1 with usage banner on no args).
-  - `ctest --test-dir build/engine_check --output-on-failure`: 51/51 PASSED (6/6 IOP + 45/45 GS cache);
-    log at `build/test_artifacts/G0a/ctest.log`.
-  - `ps2x_tests`: 470/476 PASSED (matching upstream `d06a4ab` baseline in `Docs/CANYON_PERFORMANCE_RESULTS.md:326`:
-    5 `PS2FloatSemantics` tests expect upstream PR #272 `0x7FFFFFFF` semantics reverted by `243e0fb`,
-    1 `GSGolden` test expects SOTC `.gsr` files in `Analysis/oracle/gs_golden`);
-    log at `build/test_artifacts/G0a/ps2x_tests.log`.
+- Hydrogen M00 (Gate G0a) COMPLETE on `rozu/port-bringup` (`dba95aec6650c5d22f5909e2efd7b98239528372`):
+  - `.gitignore` hardened; `External/PS2Recomp` pinned on `rozu-port` @ `8ba3cd8713d91bdec4ff44bde902c00d9eae2592`.
+  - `ctest` 51/51 PASS (`build/test_artifacts/G0a/ctest.log`); `ps2x_tests` 470/476 PASS (`build/test_artifacts/G0a/ps2x_tests.log`).
+- Hydrogen M01 (Gate G0b) COMPLETE on `rozu/port-bringup`:
+  - Removed all SOTC-only files (`Port/src/sotc/`, `Port/profile/SCES-*`, `Port/recomp/sotc.toml`, `Port/assets/sotc.rc`, SOTC `Tools/*`, `Docs/`, `Analysis/`, `setup.bat`, `package-release.bat`).
+  - Created `CMakeLists.txt` (`project(RozuRecomp)`, `PS2X_BUILD_ANALYZER=ON`, `ROZU_ENABLE_FFMPEG` auto-detect on Linux / ON on WIN32), `CMakePresets.json`, `Port/CMakeLists.txt`, `Port/src/rozu/*`, `Port/src/main.cpp` skeleton, `Port/tests/rozu_host_unit_test.cpp`.
+  - Exact `ps2xAnalyzer` executable CMake target name verified: `ps2_analyzer` (lib `ps2_analyzer_lib`).
+  - Built `ps2_recomp`, `ps2_analyzer`, `vu1_recomp`, `rozu_host_lib`, `rozu_host_unit_test`, `ps2x_tests`, and all IOP/GS test targets with zero warnings in `rozu_host_lib`/`rozu_host_unit_test`.
+  - `rozu_host_unit_test`: 15/15 PASS (`build/test_artifacts/G0b/host_unit.log`).
+  - `ctest --test-dir build/linux --output-on-failure`: 52/52 PASS (`6/6` IOP + `45/45` GS cache + `1/1` `rozu_host_unit_test`; `build/test_artifacts/G0b/ctest.log`).
+  - `ps2x_tests`: 470/476 PASS (`build/test_artifacts/G0b/ps2x_tests.log`, matching `d06a4ab` baseline).
+  - SOTC leak grep across `CMakeLists.txt`, `CMakePresets.json`, `Port/`, `Tools/`, `*.bat`, `README.md`, `Game/PLACE-YOUR-ISO-HERE.txt`: 0 leaks (only negative SOTC-rejection test in `rozu_host_unit_test.cpp` and GPL attribution link in `README.md`).
 
 7. VERY SMALL PROGRESS LOG (TIMESTAMPED, APPEND-ONLY)
 -----------------------------------------------------
@@ -127,15 +125,21 @@ HANDOFF.TXT — RULE OF ROSE (PS2) NATIVE PC STATIC RECOMPILATION
   - Initialized `External/PS2Recomp` from `LightVelox/PS2Recomp` (`d06a4ab4a6902e0ae324f184c22581c3aa387c36`) and created `rozu-port` branch (`8ba3cd8713d91bdec4ff44bde902c00d9eae2592`) with minimal Linux/GCC 15 fixes: `#include <cstddef>` in `iop_pad.h`, GCC/Clang MXCSR compiler barriers in `ps2_runtime_macros.h` + `ps2_vu_tests.cpp` + `-frounding-math` in `ps2xTest/CMakeLists.txt`, `gpu/*.cpp` link sources in `ps2xTest/gs_cache/CMakeLists.txt`, and root `enable_testing()` in `CMakeLists.txt`.
   - Audited Linux vs Windows buildability: `gs_gl.cpp` already guards WGL under `#if defined(_WIN32)` and falls back cleanly to `GSCpuBackend` on Linux (`"GPU GS backend is only implemented for Windows"`). Linux GCC/Clang requires `-msse4.1` (matching upstream `.github/workflows/build.yml`). Host lacks FFmpeg dev packages (`pkg-config` missing `libavcodec` etc.), so M00 built with `-DPS2X_ENABLE_FFMPEG=OFF`; Windows auto-fetches prebuilt FFmpeg `n7.1-241205`.
   - Built `ps2_recomp`, `ps2_analyzer`, `ps2x_tests`, 6 IOP test targets, and 3 GS cache test targets cleanly; verified `ctest` (51/51 PASS) and `ps2x_tests` (470/476 PASS, matching upstream `d06a4ab` baseline).
+- [2026-11-24 08:53 +0530] Executed M01 (Gate G0b, Gemini Hydrogen):
+  - Removed all SOTC-specific untracked files (`Port/src/sotc/`, `Port/profile/SCES-*`, `Port/recomp/sotc.toml`, `Port/assets/sotc.rc`, SOTC `Tools/*`, `Docs/`, `Analysis/`, `setup.bat`, `package-release.bat`) while preserving reusable Category A tools (`iso9660.py`, `pine.py`, `irx_imports.py`, `gs_vram.py`, `gsdump.py`, `gsr_compare.py`, `gstrace_summary.py`, `state_ram_extract.py`, `find_walk_delta.py`, `pystrings.py`, `vu0_corpus.py`, `audio_check.py`, `frame_report.py`), `Tools/win/vsenv.cmd`, `LICENSE`, `.gitattributes`, and user files.
+  - Created `CMakeLists.txt` (`project(RozuRecomp)`, `-msse4.1` on x86 GNU/Clang, `PS2X_BUILD_ANALYZER=ON`, `ROZU_ENABLE_FFMPEG` auto-detect on Linux / ON on WIN32), `CMakePresets.json` (`linux-gcc`, `win-msvc`), `Port/CMakeLists.txt` (unconditional `rozu_host_lib` + `rozu_host_unit_test`; conditional `rozu_game_code` + `rozu`), `Port/src/rozu/{log,sha256,config,function_hooks,diagnostics,display,watchdog,debug_script}.{h,cpp}`, `Port/src/main.cpp` skeleton, and `Port/tests/{rozu_host_unit_test.cpp,test_function_table_stub.cpp}`.
+  - Updated `README.md`, `Game/PLACE-YOUR-ISO-HERE.txt`, `build.bat`, `run.bat`, `Tools/disasm.py`, `Tools/audio_check.py`, and `Port/tools/vu1_bench.cpp` for `RozuRecomp` / `SLUS-21448`.
+  - Built all targets via `cmake --preset linux-gcc`; verified `rozu_host_unit_test` (15/15 PASS), `ctest` (52/52 PASS), `ps2x_tests` (470/476 PASS), and SOTC leak grep (0 leaks).
 
 8. FILE-BY-FILE CHANGE LOG
 --------------------------
-- .gitignore                                      — UPDATED (Hydrogen M00) — hardened legal/build/generated/oracle exclusions; committed.
-- .gitmodules                                     — TRACKED (Hydrogen M00) — `External/PS2Recomp` submodule registration; committed.
-- External/PS2Recomp                              — PINNED (Hydrogen M00) — `rozu-port` @ `8ba3cd8713d91bdec4ff44bde902c00d9eae2592`; committed.
-- handoff.txt                                     — UPDATED (Hydrogen M00) — M00 build/test/toolchain findings; committed.
-- architecture/*                                  — TRACKED (Hydrogen M00) — Neon Phase A–C docs committed.
-- gemini_hydrogen/*                               — TRACKED (Hydrogen M00) — Neon Phase D step prompts committed.
+- .gitignore, .gitmodules, External/PS2Recomp, architecture/*, gemini_hydrogen/* — COMMITTED (M00 `dba95aec6650c5d22f5909e2efd7b98239528372`).
+- CMakeLists.txt, CMakePresets.json, LICENSE, .gitattributes — CREATED/TRACKED (M01) — root RozuRecomp dual-OS CMake & presets.
+- Port/CMakeLists.txt, Port/src/main.cpp, Port/src/rozu/{log,sha256,config,function_hooks,diagnostics,display,watchdog,debug_script}.{h,cpp} — CREATED (M01) — generic `rozu_host_lib` and clean `rozu` skeleton.
+- Port/tests/{rozu_host_unit_test.cpp,test_function_table_stub.cpp} — CREATED (M01) — host unit tests (SHA-256, INI config, MXCSR FPU mode, logging).
+- Port/tools/vu1_bench.cpp, Tools/{audio_check.py,disasm.py}, Tools/*.py (Cat A), Tools/win/* — UPDATED/TRACKED (M01).
+- README.md, Game/PLACE-YOUR-ISO-HERE.txt, configure.bat, build.bat, run.bat — UPDATED/TRACKED (M01).
+- handoff.txt — UPDATED (M01) — recorded Gate G0b results & commands.
 
 9. DISCOVERED SYMBOLS / ADDRESSES / ASSUMPTIONS (VERIFIED VS UNVERIFIED)
 ------------------------------------------------------------------------
@@ -159,12 +163,17 @@ HANDOFF.TXT — RULE OF ROSE (PS2) NATIVE PC STATIC RECOMPILATION
 
 11. EXACT COMMANDS RUN + EXIT CODES + TEST LOG PATHS
 ----------------------------------------------------
-- `git check-ignore -v "Game/Rule of Rose (USA).iso" ... "sotc.ini"` -> exit 0 (17/17 ignored).
-- `cmake -S External/PS2Recomp -B build/engine_check -G Ninja -DCMAKE_BUILD_TYPE=RelWithDebInfo -DCMAKE_C_FLAGS=-msse4.1 -DCMAKE_CXX_FLAGS=-msse4.1 -DPS2X_BUILD_RECOMP=ON -DPS2X_BUILD_ANALYZER=ON -DPS2X_BUILD_RUNTIME=ON -DPS2X_BUILD_TEST=ON -DPS2X_BUILD_STUDIO=OFF -DPS2X_ENABLE_DEBUG_UI=OFF -DPS2X_ENABLE_FFMPEG=OFF -DPS2X_ENABLE_SCCACHE=OFF -DPS2X_IOP_BUILD_TESTS=ON` -> exit 0.
-- `cmake --build build/engine_check --target ps2_recomp ps2_analyzer ps2x_tests ps2_iop_emulator_tests ps2_iop_import_tests ps2_iop_compatibility_tests ps2_iop_sio2_tests ps2_iop_spu2_tests ps2_iop_import_version_tests ps2_gs_texture_cache_tests ps2_gs_clut_cache_tests ps2_gs_memory_cache_tests` -> exit 0.
-- `./build/engine_check/ps2xRecomp/ps2_recomp` & `./build/engine_check/ps2xAnalyzer/ps2_analyzer` -> exit 1 (printed expected CLI usage).
-- `ctest --test-dir build/engine_check --output-on-failure | tee build/test_artifacts/G0a/ctest.log` -> exit 0 (`51/51`: 6/6 IOP + 45/45 GS cache).
-- `(cd External/PS2Recomp && ../../build/engine_check/ps2xTest/ps2x_tests) > build/test_artifacts/G0a/ps2x_tests.log 2>&1` -> exit 0 (`470/476` passed; 6 expected upstream/missing-golden failures).
+- M00 (`build/engine_check`):
+  - `git check-ignore -v ...` -> exit 0 (17/17 ignored).
+  - `ctest --test-dir build/engine_check --output-on-failure` -> exit 0 (`51/51`); `build/test_artifacts/G0a/ctest.log`.
+  - `ps2x_tests` -> exit 0 (`470/476`); `build/test_artifacts/G0a/ps2x_tests.log`.
+- M01 (`build/linux`):
+  - `cmake --preset linux-gcc` -> exit 0 (`Port/generated` absent handled gracefully).
+  - `cmake --build build/linux --target ps2_recomp ps2_analyzer vu1_recomp rozu_host_lib rozu_host_unit_test ps2x_tests ps2_iop_emulator_tests ps2_iop_import_tests ps2_iop_compatibility_tests ps2_iop_sio2_tests ps2_iop_spu2_tests ps2_iop_import_version_tests ps2_gs_texture_cache_tests ps2_gs_clut_cache_tests ps2_gs_memory_cache_tests` -> exit 0.
+  - `./build/linux/Port/rozu_host_unit_test | tee build/test_artifacts/G0b/host_unit.log` -> exit 0 (`15/15` checks passed).
+  - `ctest --test-dir build/linux --output-on-failure | tee build/test_artifacts/G0b/ctest.log` -> exit 0 (`52/52`: 6/6 IOP + 45/45 GS cache + 1/1 `rozu_host_unit_test`).
+  - `(cd External/PS2Recomp && ../../build/linux/External/PS2Recomp/ps2xTest/ps2x_tests) > build/test_artifacts/G0b/ps2x_tests.log 2>&1` -> exit 0 (`470/476`).
+  - `grep -rniE "sotc|SCES-53326|SCES_533|KERNEL\.XFF|GAMECORE|0x0134|0x0116|1DC9EC|001ABED0|colossus|wander" CMakeLists.txt CMakePresets.json Port/ Tools/ configure.bat build.bat run.bat README.md Game/PLACE-YOUR-ISO-HERE.txt` -> 0 SOTC leaks.
 
 12. KNOWN BUGS / BLOCKERS / UNRESOLVED RESEARCH QUESTIONS
 ---------------------------------------------------------
@@ -184,17 +193,21 @@ HANDOFF.TXT — RULE OF ROSE (PS2) NATIVE PC STATIC RECOMPILATION
 - gemini_hydrogen/STEP_INDEX.txt
 - gemini_hydrogen/Gemini_Step_001.txt .. Gemini_Step_006.txt (M00–M05: READY)
 - gemini_hydrogen/Gemini_Step_007.txt .. Gemini_Step_013.txt (M06–M12: CONDITIONAL)
-- NEXT ONE TO RUN: gemini_hydrogen/Gemini_Step_002.txt (M01 / Gate G0b)
+- NEXT ONE TO RUN: gemini_hydrogen/Gemini_Step_003.txt (M02 / Gate G1a)
 
 15. NEXT 1-3 ACTIONS, WITH COMMANDS AND PRECISE FILE PATHS
 ----------------------------------------------------------
-1. Feed `gemini_hydrogen/Gemini_Step_002.txt` (M01 / Gate G0b) to Gemini Hydrogen.
-2. Hydrogen executes M01: strips SOTC-only targets/hooks/scripts/docs, creates clean RozuRecomp CMake & `Port/src/rozu/` generic utilities while keeping `External/PS2Recomp` isolated, and verifies `ctest` stays 100% PASS.
-3. Proceed to `gemini_hydrogen/Gemini_Step_003.txt` (M02) after M01 PASS.
+1. Feed `gemini_hydrogen/Gemini_Step_003.txt` (M02 / Gate G1a) to Gemini Hydrogen.
+2. Hydrogen executes M02: creates `Port/profile/SLUS-21448_v1.00.json`, Phase 1 of
+   `Tools/ror_prepare.py` (ISO9660 validation + `SLUS_214.48` extraction to `build/prepare/`
+   + `rozu_layout_generated.h`), and `Port/src/rozu/game_disc.{h,cpp}` + `rozu_disc_test`.
+3. Proceed to `gemini_hydrogen/Gemini_Step_004.txt` (M03) after M02 PASS.
 
 16. NEXT SUCCESS CRITERIA / STOP CONDITIONS
 -------------------------------------------
-- Gate G0b (M01): SOTC-specific artifacts cleanly removed/replaced, RozuRecomp CMake + `Port/src/rozu/` utilities compile & pass unit tests, clean M01 commit on `rozu/port-bringup`.
+- Gate G1a (M02): `Tools/ror_prepare.py --validate-only` passes all 13 SHA-256 hashes on
+  `Game/Rule of Rose (USA).iso`, rejects bogus ISOs, and `rozu_disc_test` passes positive &
+  negative disc verification tests.
 
 17. WARNINGS / COPYRIGHT AND GIT HYGIENE
 ----------------------------------------
@@ -205,4 +218,4 @@ HANDOFF.TXT — RULE OF ROSE (PS2) NATIVE PC STATIC RECOMPILATION
 
 18. LAST UPDATED + AUTHOR / MODEL
 ---------------------------------
-- 2026-11-24 08:24 +0530 | Gemini 4 Hydrogen (High) — Implementation Agent
+- 2026-11-24 08:53 +0530 | Gemini 4 Hydrogen (High) — Implementation Agent

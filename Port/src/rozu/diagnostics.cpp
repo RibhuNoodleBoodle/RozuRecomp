@@ -1,0 +1,239 @@
+#include "rozu/diagnostics.h"
+#include "rozu/function_hooks.h"
+#include "rozu/log.h"
+#include "runtime/ps2_memory.h"
+
+#include <algorithm>
+#include <atomic>
+#include <chrono>
+#include <cstdlib>
+#include <cstring>
+#include <fstream>
+#include <iomanip>
+#include <memory>
+#include <sstream>
+#include <string>
+#include <vector>
+
+#if defined(__SSE2__) || defined(_M_X64) || defined(_M_IX86)
+#include <pmmintrin.h>
+#include <xmmintrin.h>
+#endif
+
+namespace rozu
+{
+    namespace
+    {
+        void installRamDump(const std::string &spec)
+        {
+            const size_t colon = spec.find(':');
+            if (colon == std::string::npos)
+            {
+                ROZU_ERROR(Boot, "ROZU_DUMP_RAM_AT must be <hex address>:<file>");
+                return;
+            }
+            const uint32_t address = static_cast<uint32_t>(std::stoul(spec.substr(0, colon), nullptr, 16));
+            std::string path = spec.substr(colon + 1);
+            uint32_t whenAddress = 0;
+            uint32_t whenValue = 0;
+            bool conditional = false;
+            bool whenNotEqual = false;
+            double afterSeconds = 0.0;
+            const size_t after = path.find(":after=");
+            if (after != std::string::npos)
+            {
+                afterSeconds = std::stod(path.substr(after + 7));
+                path = path.substr(0, after);
+            }
+            const size_t when = path.find(":when=");
+            if (when != std::string::npos)
+            {
+                const std::string condition = path.substr(when + 6);
+                path = path.substr(0, when);
+                const size_t eq = condition.find('=');
+                if (eq == std::string::npos || eq == 0)
+                {
+                    ROZU_ERROR(Boot, "ROZU_DUMP_RAM_AT invalid :when= condition '" << condition << "'");
+                    return;
+                }
+                whenNotEqual = condition[eq - 1] == '!';
+                whenAddress = static_cast<uint32_t>(std::stoul(condition.substr(0, whenNotEqual ? eq - 1 : eq), nullptr, 16));
+                whenValue = static_cast<uint32_t>(std::stoul(condition.substr(eq + 1), nullptr, 16));
+                conditional = true;
+            }
+            auto done = std::make_shared<std::atomic<bool>>(false);
+            const auto start = std::chrono::steady_clock::now();
+            FunctionHooks::instance().observeEntry(
+                address, "ramdump_" + path,
+                [address, path, done, conditional, whenNotEqual, whenAddress, whenValue, afterSeconds, start](
+                    uint8_t *rdram, R5900Context *ctx, PS2Runtime *)
+                {
+                    if (std::chrono::duration<double>(std::chrono::steady_clock::now() - start).count() < afterSeconds)
+                    {
+                        return;
+                    }
+                    if (conditional)
+                    {
+                        uint32_t current = 0;
+                        std::memcpy(&current, rdram + (whenAddress & PS2_RAM_MASK), sizeof(current));
+                        if ((current != whenValue) != whenNotEqual)
+                        {
+                            return;
+                        }
+                    }
+                    if (done->exchange(true))
+                    {
+                        return;
+                    }
+                    std::ofstream out(path, std::ios::binary | std::ios::trunc);
+                    out.write(reinterpret_cast<const char *>(rdram), PS2_RAM_SIZE);
+                    ROZU_INFO(Boot, "guest RAM dumped at entry of 0x" << std::hex << address << " to " << path
+#if defined(__SSE2__) || defined(_M_X64) || defined(_M_IX86)
+                                                                     << " R=0x" << static_cast<uint32_t>(_mm_cvtsi128_si32(_mm_castps_si128(ctx->vu0_r)))
+#endif
+                                                                     << std::dec);
+                    (void)ctx;
+                });
+        }
+
+        void installRamDumpFromEnvironment()
+        {
+            const char *value = std::getenv("ROZU_DUMP_RAM_AT");
+            if (!value)
+            {
+                return;
+            }
+            const std::string all(value);
+            size_t begin = 0;
+            while (begin < all.size())
+            {
+                const size_t end = all.find(';', begin);
+                const std::string spec = all.substr(begin, end == std::string::npos ? std::string::npos : end - begin);
+                if (!spec.empty())
+                {
+                    installRamDump(spec);
+                }
+                if (end == std::string::npos)
+                {
+                    break;
+                }
+                begin = end + 1;
+            }
+        }
+
+        void installMemoryTracesFromEnvironment()
+        {
+            const char *value = std::getenv("ROZU_TRACE_MEM");
+            if (!value)
+            {
+                return;
+            }
+            std::stringstream all(value);
+            std::string spec;
+            while (std::getline(all, spec, ';'))
+            {
+                if (spec.empty())
+                {
+                    continue;
+                }
+                std::stringstream fields(spec);
+                std::string part;
+                std::vector<uint32_t> numbers;
+                while (std::getline(fields, part, ':'))
+                {
+                    numbers.push_back(static_cast<uint32_t>(std::stoul(part, nullptr, 16)));
+                }
+                if (numbers.size() < 3)
+                {
+                    ROZU_ERROR(Boot, "ROZU_TRACE_MEM must be <function>:<address>:<length>[:<a0>];...");
+                    continue;
+                }
+                const uint32_t function = numbers[0];
+                const uint32_t address = numbers[1];
+                const uint32_t length = std::min<uint32_t>(numbers[2], 0x400u);
+                const bool filtered = numbers.size() > 3;
+                const uint32_t a0 = filtered ? numbers[3] : 0u;
+                FunctionHooks::instance().observeEntry(
+                    function, "tracemem_" + spec,
+                    [function, address, length, filtered, a0](uint8_t *rdram, R5900Context *ctx, PS2Runtime *)
+                    {
+                        if (filtered && getRegU32(ctx, 4) != a0)
+                        {
+                            return;
+                        }
+                        std::ostringstream line;
+                        line << "mem at 0x" << std::hex << function << " ra=0x" << getRegU32(ctx, 31) << " [0x" << address << "]";
+                        for (uint32_t i = 0; i < length; ++i)
+                        {
+                            if ((i & 15u) == 0u)
+                            {
+                                line << "\n    +" << std::setw(3) << std::setfill('0') << i << ":";
+                            }
+                            line << ' ' << std::setw(2) << std::setfill('0')
+                                 << static_cast<uint32_t>(rdram[(address + i) & PS2_RAM_MASK]);
+                        }
+                        ROZU_INFO(Ee, line.str());
+                    });
+            }
+        }
+    }
+
+    void applyEeFloatingPointMode()
+    {
+#if defined(__SSE2__) || defined(_M_X64) || defined(_M_IX86)
+        _MM_SET_ROUNDING_MODE(_MM_ROUND_TOWARD_ZERO);
+        _MM_SET_FLUSH_ZERO_MODE(_MM_FLUSH_ZERO_ON);
+        _MM_SET_DENORMALS_ZERO_MODE(_MM_DENORMALS_ZERO_ON);
+#endif
+    }
+
+    void installEeFloatingPointMode(PS2Runtime &runtime, uint32_t bootEntry)
+    {
+        (void)runtime;
+        FunctionHooks::instance().observeEntry(bootEntry, "boot_entry", [](uint8_t *, R5900Context *, PS2Runtime *)
+                                               {
+            applyEeFloatingPointMode();
+            ROZU_INFO(Ee, "EE FPU host mode: round toward zero, denormals flushed"); });
+    }
+
+    void installCallTracesFromEnvironment(PS2Runtime &runtime)
+    {
+        (void)runtime;
+        installRamDumpFromEnvironment();
+        installMemoryTracesFromEnvironment();
+        const char *value = std::getenv("ROZU_TRACE_CALLS");
+        if (!value)
+        {
+            return;
+        }
+        std::string list(value);
+        size_t start = 0;
+        while (start < list.size())
+        {
+            const size_t comma = list.find(',', start);
+            const std::string token = list.substr(start, comma == std::string::npos ? std::string::npos : comma - start);
+            start = comma == std::string::npos ? list.size() : comma + 1;
+            if (token.empty())
+            {
+                continue;
+            }
+            const uint32_t address = static_cast<uint32_t>(std::stoul(token, nullptr, 16));
+            auto counter = std::make_shared<std::atomic<uint32_t>>(0u);
+            FunctionHooks::instance().observeEntry(address, "trace_" + token, [address, counter](uint8_t *, R5900Context *ctx, PS2Runtime *)
+                                                   {
+                const uint32_t n = counter->fetch_add(1);
+                if (n < 64u || (n & (n - 1u)) == 0u)
+                {
+                    ROZU_INFO(Ee, "call #" << n << " 0x" << std::hex << address << " a0=" << getRegU32(ctx, 4) << " a1=" << getRegU32(ctx, 5)
+                                           << " a2=" << getRegU32(ctx, 6) << " a3=" << getRegU32(ctx, 7) << " ra=" << getRegU32(ctx, 31)
+                                           << " sp=" << getRegU32(ctx, 29) << std::dec << " f12=" << ctx->f[12] << " f13=" << ctx->f[13]
+                                           << " f14=" << ctx->f[14] << " f15=" << ctx->f[15]
+#if defined(__SSE2__) || defined(_M_X64) || defined(_M_IX86)
+                                           << " R=0x" << std::hex
+                                           << static_cast<uint32_t>(_mm_cvtsi128_si32(_mm_castps_si128(ctx->vu0_r)))
+#endif
+                                           << std::dec);
+                } });
+        }
+    }
+}

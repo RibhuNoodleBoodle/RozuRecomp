@@ -1,0 +1,18 @@
+This folder holds your copy of the game disc.
+
+Drop your Rule of Rose disc image here, as a file whose name ends in .iso
+(any filename is fine). RozuRecomp supports exactly one release:
+
+    Rule of Rose (USA)
+    SLUS-21448, version 1.00 (NTSC-U)
+    3,393,454,080 bytes (1,656,960 sectors x 2048 B)
+    Redump MD5:    54e6990f5ed6e0d5b03b6ca7655b7cec
+    Disc SHA-256:  95ff5d1298b1bb19443098852c95c42886605f01fb1ffa8d823ff496598989e9
+
+Any other version or region (PAL SLES-54218, JP SCPS-15106, trimmed or
+re-packed dumps) is rejected: the recompiled code and profile match this
+exact disc, and every tool verifies the SHA-256 hashes before executing
+anything from the image.
+
+You can also keep the image elsewhere and pass `--iso <path>` or set the
+`ROZU_ISO` environment variable.
