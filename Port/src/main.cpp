@@ -12,6 +12,7 @@
 #include "rozu/display.h"
 #include "rozu/function_hooks.h"
 #include "rozu/game_disc.h"
+#include "rozu/hle/tty_bridge.h"
 #include "rozu/log.h"
 #include "rozu/watchdog.h"
 #include "rozu_layout_generated.h"
@@ -35,6 +36,9 @@ void registerGeneratedVu1Programs();
 #include <cstdio>
 #include <cstring>
 #elif defined(__linux__)
+#include <csignal>
+#include <cstdio>
+#include <execinfo.h>
 #include <unistd.h>
 #endif
 
@@ -115,6 +119,43 @@ namespace
                         printStackTrace();
                         std::_Exit(3); });
     }
+#elif defined(__linux__)
+    void posixCrashHandler(int sig)
+    {
+        std::fprintf(stderr, "[crash] fatal signal %d\n", sig);
+        void *frames[48];
+        const int count = backtrace(frames, 48);
+        backtrace_symbols_fd(frames, count, STDERR_FILENO);
+        std::_Exit(3);
+    }
+
+    void installCrashReporter()
+    {
+        std::set_terminate([]()
+                           {
+                               std::fprintf(stderr, "[crash] std::terminate\n");
+                               if (const std::exception_ptr ep = std::current_exception())
+                               {
+                                   try
+                                   {
+                                       std::rethrow_exception(ep);
+                                   }
+                                   catch (const std::exception &e)
+                                   {
+                                       std::fprintf(stderr, "[crash] exception: %s\n", e.what());
+                                   }
+                                   catch (...)
+                                   {
+                                       std::fprintf(stderr, "[crash] non-std exception\n");
+                                   }
+                               }
+                               void *frames[48];
+                               const int count = backtrace(frames, 48);
+                               backtrace_symbols_fd(frames, count, STDERR_FILENO);
+                               std::_Exit(3); });
+        std::signal(SIGABRT, posixCrashHandler);
+        std::signal(SIGSEGV, posixCrashHandler);
+    }
 #endif
 
     void printUsage()
@@ -127,7 +168,7 @@ namespace
 
 int main(int argc, char *argv[])
 {
-#if defined(_WIN32)
+#if defined(_WIN32) || defined(__linux__)
     installCrashReporter();
 #endif
     const std::filesystem::path exeDir = executableDirectory();
@@ -209,7 +250,8 @@ int main(int argc, char *argv[])
     ps2x::savestate::setQuickSlotPath(exeDir / "states" / "quick.state");
 
     GSThreadedBackend::SetEnabledByDefault(true);
-    GSThreadedBackend::SetGpuByDefault(true);
+    const char *gpuEnv = std::getenv("PS2X_GS_GPU");
+    GSThreadedBackend::SetGpuByDefault(!(gpuEnv && std::string_view(gpuEnv) == "0"));
     GSGpuBackend::SetAsyncPresentDefault(true);
     ps2x::asyncvif::setDefaultEnabled(false);
     ps2x::asyncvif::setHostPacingDefault(false);
@@ -242,6 +284,7 @@ int main(int argc, char *argv[])
                                              : PS2Runtime::MissingFunctionPolicy::Stop);
         rozu::FunctionHooks::instance().attach(runtime);
         rozu::installEeFloatingPointMode(runtime, runtime.cpu().pc);
+        rozu::installTtyBridge(runtime);
 #if ROZU_HAS_VU1_PROGRAMS
         registerGeneratedVu1Programs();
 #endif
@@ -250,8 +293,9 @@ int main(int argc, char *argv[])
         rozu::FunctionHooks::instance().logBindings();
 
         rozu::watchdog::startFromEnvironment(&runtime);
-        ROZU_INFO(Boot, "starting guest at 0x" << std::hex << runtime.cpu().pc);
+        ROZU_INFO(Boot, "starting guest at 0x" << std::hex << runtime.cpu().pc << std::dec);
         runtime.run();
+        rozu::watchdog::stop();
         ROZU_INFO(Boot, "runtime exited");
     }
     catch (const std::exception &e)

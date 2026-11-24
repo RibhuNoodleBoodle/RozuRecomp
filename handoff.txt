@@ -60,25 +60,27 @@ HANDOFF.TXT — RULE OF ROSE (PS2) NATIVE PC STATIC RECOMPILATION
 
 4. BRANCH, HEAD SHA, WORKTREE STATUS, UNCOMMITTED CHANGES
 ---------------------------------------------------------
-- Branch: `rozu/port-bringup` (M03 commit `77e03357da5b19e6026530e43debeab88b24b3c7`)
-- Worktree status: M04 `Tools/generate.py`, `Port/tests/rozu_poc_test.cpp`,
-  `Port/CMakeLists.txt`, and `handoff.txt` ready for M04 commit on `rozu/port-bringup`.
-  `Port/generated/` confirmed 100% git-ignored.
+- Branch: `rozu/port-bringup` (M04 commit `2eed78cef8cf341340590602e2cea2fd2adeed51`)
+- Worktree status: M05 `External/PS2Recomp` (`rozu-port` @ `d25cb6ac7e2c6d8b04bb635338d7fe8164df83b5`),
+  `Port/src/rozu/hle/tty_bridge.{h,cpp}`, `Port/src/rozu/watchdog.cpp`,
+  `Port/src/main.cpp`, `Port/CMakeLists.txt`, `Tools/rozu_boot_check.py`, and
+  `handoff.txt` ready for M05 commit on `rozu/port-bringup`.
+  `Port/generated/`, `build/`, `game_data/`, `memcards/` confirmed git-ignored.
   Only user's untracked `Google_Neon_Rule_of_Rose_Recomp_Architect.txt` remains untracked.
 - Ownership: Hydrogen owns all implementation/build/test/commit steps from M00 onward.
 
 5. CURRENT PHASE + ACTIVE STEP ID + % STATUS (ESTIMATE)
 -------------------------------------------------------
-- Current Phase: M04 (Gate G2) COMPLETE -> Ready for M05 (Gate G3)
-- Active Step ID: Completed `gemini_hydrogen/Gemini_Step_005.txt` (M04 / Gate G2);
-  next is `gemini_hydrogen/Gemini_Step_006.txt` (M05 / Gate G3).
+- Current Phase: M05 (Gate G3) COMPLETE -> Ready for M06 (CONDITIONAL)
+- Active Step ID: Completed `gemini_hydrogen/Gemini_Step_006.txt` (M05 / Gate G3);
+  next is `gemini_hydrogen/Gemini_Step_007.txt` (M06 — CONDITIONAL).
 - Architecture / Planning Status: 100% COMPLETE (estimate)
 - Implementation / Build / Boot / Playable Status:
   - Planned: M00–M12 (M03–M05 READY; M06–M12 CONDITIONAL)
-  - Implemented: ~40% (M00–M04 complete: codegen + G2 PoC + full `rozu_game_code` built)
-  - Built: `rozu_host_lib`, `rozu_host_unit_test`, `rozu_disc_test`, `rozu_poc_test`, `rozu_game_code` (`build/linux/Port/librozu_game_code.a`), PS2Recomp tools/tests
-  - Booted: NOT YET (targeted in M05)
-  - Playable: NOT YET
+  - Implemented: ~50% (M00–M05 complete: linked `rozu` + verified EE/IOP boot trace)
+  - Built: `build/linux/bin/rozu` (`3.1 GiB`), `rozu_game_code` (`13 GiB`), `rozu_host_lib`, all unit/PoC/IOP/GS tests
+  - Booted: YES (headless `ROZU_HEADLESS=1` 300-field deterministic trace: all 9 IOPCONF modules + RXSNDDRV RPC + `SYSTEM.INI` + `GsSetCrt` 640x448)
+  - Playable: NOT YET (M06–M12)
 
 6. COMPLETED MILESTONES + PASS EVIDENCE + COMMITS
 -------------------------------------------------
@@ -87,11 +89,15 @@ HANDOFF.TXT — RULE OF ROSE (PS2) NATIVE PC STATIC RECOMPILATION
 - Hydrogen M01 (Gate G0b) COMPLETE on `rozu/port-bringup` (`02ac14bc32e4fc0ade8d0265e1185c7bddddf411`).
 - Hydrogen M02 (Gate G1a) COMPLETE on `rozu/port-bringup` (`3ab9347ccd23bfe1152f1eb8ff6b99b14b22a338`).
 - Hydrogen M03 (Gate G1b) COMPLETE on `rozu/port-bringup` (`77e03357da5b19e6026530e43debeab88b24b3c7`).
-- Hydrogen M04 (Gate G2) COMPLETE on `rozu/port-bringup`:
+- Hydrogen M04 (Gate G2) COMPLETE on `rozu/port-bringup` (`2eed78cef8cf341340590602e2cea2fd2adeed51`):
   - Created `Tools/generate.py` (orchestrating `ror_prepare.py` -> `ps2_recomp` into `build/generated_staging/` -> decode/vutext validation -> content-preserving sync into `Port/generated/`).
   - Full `SLUS_214.48` recompilation PASS: `9,016` functions (`8,892` recompiled, `124` stubs, `66,349` resumable entry points), **0 decode failures**, **0 unhandled instructions**, **0 errors**, `9,017` generated `.cpp` files, `0x00100008` registered, `0` `.vutext` entries (`build/test_artifacts/G2/generate.log`).
   - Created `Port/tests/rozu_poc_test.cpp` & enabled `rozu_poc_test` in `Port/CMakeLists.txt`: natively executed 7 real recompiled `SLUS_214.48` functions (`setId`, `getId`, `setMotionSpeed`, `getMotionSpeed`, `setBaseRotate`, `sub_00103390`, `sub_001041c4` 3-op `mult` PRNG) on 32 MB RDRAM + `R5900Context` with **17/17 checks PASS** (`build/test_artifacts/G2/poc_test.log`).
   - Built full `rozu_game_code` static library (`-j 4`, `5313.339s` wall time, `9020/9020` Ninja steps, `0` errors) -> `build/linux/Port/librozu_game_code.a` (`13 GiB`, `RelWithDebInfo`; reusable via `-DROZU_GAME_CODE_LIBRARY=/mnt/6421-8598/building/RozuRecomp/build/linux/Port/librozu_game_code.a`); `ctest` **54/54 PASS**.
+- Hydrogen M05 (Gate G3) COMPLETE on `rozu/port-bringup`:
+  - Wired `Port/src/rozu/hle/tty_bridge.{h,cpp}` (`0x0025DEA8` `write`, `0x00263068` `sceWrite`, `0x0025EB80` `sceTtyWrite`, `0x00260110` `scePrintf`), `ROZU_STOP_AFTER_FIELDS` in `Port/src/rozu/watchdog.cpp`, POSIX crash handler + `PS2X_GS_GPU` wiring in `Port/src/main.cpp`, `-Wl,-u,g_ps2RecompiledFunctionTable` link order fix in `Port/CMakeLists.txt`, and `Tools/rozu_boot_check.py`.
+  - Fixed 3 generic runtime bugs on `External/PS2Recomp` (`rozu-port` @ `d25cb6a`): KSEG0 (`0x80000000..0x80100000`) alarm/syscall fallback (`0xFC`/`0xFD`/`-0xFE`), `EeScheduler` priority `0` + `Alarm` interrupt context handling, and `IopModuleLoader::load` overflow into the 2 MiB `IopMemory` heap (plus unit tests in `ps2_runtime_kernel_tests.cpp` and `iop_emulator_tests.cpp`).
+  - Gate G3 PASS: `Tools/rozu_boot_check.py` passed 2 consecutive deterministic runs (`7.458s` and `6.776s`, exit `0`, `300` VSync fields, all 9 `IOPCONF.CNF` modules loaded, `RXSNDDRV.IRX` started RX-sound RPC server v1.00, `SYSTEM.INI` loaded, `GsSetCrt` 640x448, DualShock2 mode `0x73`, `0` crashes/missing functions/unresolved imports); `ctest` `54/54` PASS; `ps2x_tests` `472/478` PASS.
 
 7. VERY SMALL PROGRESS LOG (TIMESTAMPED, APPEND-ONLY)
 -----------------------------------------------------
@@ -138,6 +144,10 @@ HANDOFF.TXT — RULE OF ROSE (PS2) NATIVE PC STATIC RECOMPILATION
 - [2026-11-24 11:08 +0530] Executed M04 (Gate G2, Gemini Hydrogen):
   - Created `Tools/generate.py` and ran full `SLUS_214.48` codegen: `9,016` functions (`8,892` recompiled, `124` stubs, `66,349` extra entrypoints), `0` decode failures, `0` unhandled instructions, `9,017` `.cpp` files synced to `Port/generated/` (100% git-ignored).
   - Created & ran `Port/tests/rozu_poc_test.cpp` (17/17 PASS on 7 real recompiled `SLUS_214.48` functions); compiled full `build/linux/Port/librozu_game_code.a` (`13 GiB`, `9,020` Ninja targets on `-j 4` in `5313.339s`, `15 GiB` RAM); `ctest` `54/54` PASS.
+- [2026-11-24 13:39 +0530] Executed M05 (Gate G3, Gemini Hydrogen):
+  - Created `Port/src/rozu/hle/tty_bridge.{h,cpp}`, added `ROZU_STOP_AFTER_FIELDS` in `Port/src/rozu/watchdog.cpp`, wired `main.cpp` crash/PS2X_GS_GPU/TTY hooks and `Port/CMakeLists.txt` link flags, and created `Tools/rozu_boot_check.py`.
+  - Fixed KSEG0 alarm syscall fallback (`Dispatcher.cpp`, `System.cpp`), `EeScheduler` priority-0 creation/boost + `Alarm` interrupt context (`EeScheduler.cpp`), and `IopModuleLoader` overflow into 2 MiB IOP heap (`iop_module_loader.cpp`); committed `External/PS2Recomp` on `rozu-port` @ `d25cb6ac7e2c6d8b04bb635338d7fe8164df83b5`.
+  - Verified Gate G3: `Tools/rozu_boot_check.py` (2 runs, 300 VSync fields, 9/9 modules, RXSNDDRV RPC started, `SYSTEM.INI` read, `0` failures -> PASS), `ctest` `54/54` PASS, `ps2x_tests` `472/478` PASS.
 
 8. FILE-BY-FILE CHANGE LOG
 --------------------------
@@ -145,10 +155,8 @@ HANDOFF.TXT — RULE OF ROSE (PS2) NATIVE PC STATIC RECOMPILATION
 - CMakeLists.txt, CMakePresets.json, LICENSE, .gitattributes, Port/*, Tools/*, README.md, Game/PLACE-YOUR-ISO-HERE.txt, *.bat — COMMITTED (M01 `02ac14bc32e4fc0ade8d0265e1185c7bddddf411`).
 - Port/profile/SLUS-21448_v1.00.json, Tools/ror_prepare.py, Port/src/rozu/game_disc.{h,cpp}, Port/tests/rozu_disc_test.cpp, Port/CMakeLists.txt, .gitignore — COMMITTED (M02 `3ab9347ccd23bfe1152f1eb8ff6b99b14b22a338`).
 - Tools/ror_prepare.py, Docs/SDK_STUB_AUDIT.md, Port/recomp/rozu.toml, Analysis/ADDRESS_MAP.generated.csv — COMMITTED (M03 `77e03357da5b19e6026530e43debeab88b24b3c7`).
-- Tools/generate.py — CREATED (M04) — cross-platform codegen orchestrator (`ror_prepare` -> `ps2_recomp` -> sync).
-- Port/tests/rozu_poc_test.cpp — CREATED (M04) — Gate G2 native execution PoC across 7 real `SLUS_214.48` functions.
-- Port/CMakeLists.txt — UPDATED (M04) — enabled `rozu_poc_test` when `Port/generated/` is present.
-- handoff.txt — UPDATED (M04).
+- Tools/generate.py, Port/tests/rozu_poc_test.cpp, Port/CMakeLists.txt, handoff.txt — COMMITTED (M04 `2eed78cef8cf341340590602e2cea2fd2adeed51`).
+- External/PS2Recomp (`rozu-port` @ `d25cb6a`), Port/src/rozu/hle/tty_bridge.{h,cpp}, Port/src/rozu/watchdog.cpp, Port/src/main.cpp, Port/CMakeLists.txt, Tools/rozu_boot_check.py, handoff.txt — READY FOR M05 COMMIT.
 
 9. DISCOVERED SYMBOLS / ADDRESSES / ASSUMPTIONS (VERIFIED VS UNVERIFIED)
 ------------------------------------------------------------------------
@@ -191,39 +199,41 @@ HANDOFF.TXT — RULE OF ROSE (PS2) NATIVE PC STATIC RECOMPILATION
   - `(cd External/PS2Recomp && ../../build/linux/External/PS2Recomp/ps2xTest/ps2x_tests) > build/test_artifacts/G0b/ps2x_tests.log 2>&1` -> exit 0 (`470/476`).
   - `grep -rniE "sotc|SCES-53326|SCES_533|KERNEL\.XFF|GAMECORE|0x0134|0x0116|1DC9EC|001ABED0|colossus|wander" CMakeLists.txt CMakePresets.json Port/ Tools/ configure.bat build.bat run.bat README.md Game/PLACE-YOUR-ISO-HERE.txt` -> 0 SOTC leaks.
 
+- M05 (`build/linux` + `build/test_artifacts/G3`):
+  - `cmake --build build/linux --target rozu -j 4` -> exit 0 (`build/linux/bin/rozu`, `3.1 GiB`).
+  - `python3 Tools/rozu_boot_check.py --exe build/linux/bin/rozu --iso "Game/Rule of Rose (USA).iso" --fields 300 --timeout 120 --runs 2 --out build/test_artifacts/G3 2>&1 | tee build/test_artifacts/G3/summary.log` -> exit 0 (`overall_pass=True`, `reproducible=True`, run 1 `7.458s` / run 2 `6.776s`, `9/9` IOP modules, `rxsnd=True`, `files=11`, `failures=0`); `build/test_artifacts/G3/{summary.json,run_1.log,run_2.log}`.
+  - `ctest --test-dir build/linux --output-on-failure | tee build/test_artifacts/G3/ctest.log` -> exit 0 (`54/54` PASS).
+  - `(cd External/PS2Recomp && ../../build/linux/External/PS2Recomp/ps2xTest/ps2x_tests) > build/test_artifacts/G3/ps2x_tests.log 2>&1` -> `472/478` PASS (zero regressions from `470/476` baseline + 2 new M05 runtime tests PASS).
+
 12. KNOWN BUGS / BLOCKERS / UNRESOLVED RESEARCH QUESTIONS
 ---------------------------------------------------------
 - See `architecture/unknowns_and_risks.md` (R1–R10).
-- B1 (M00) RESOLVED: `External/PS2Recomp` initialized and pinned on `rozu-port` @ `8ba3cd87`.
-- B2 (M06): Local Ubuntu host lacks FFmpeg dev packages (`libavcodec-dev` etc. not in `pkg-config`). Either install system FFmpeg dev libs before M06 or test FFmpeg on Windows MSVC build.
+- B1 (M00) RESOLVED: `External/PS2Recomp` initialized and pinned on `rozu-port`.
+- B2 (M06): Local Ubuntu host lacks FFmpeg dev packages (`libavcodec-dev` etc. not in `pkg-config`). Either install system FFmpeg dev libs before M06 (`CP_LOGO.PSS`) or test FFmpeg on Windows MSVC build.
 - B3 (M12) VERIFIED: `gs_gl.cpp` is WGL-only on `#if defined(_WIN32)` and cleanly falls back on Linux (`"GPU GS backend is only implemented for Windows"`); `GSCpuBackend` (`PS2X_GS_GPU=0`) is fully portable for M05–M10 Linux bring-up.
 - Linux GCC note: requires `-msse4.1` C/CXX flags (matching upstream `.github/workflows/build.yml`).
 
 13. CHANGES TO ENGINE FORK / SUBMODULE PINNING STATUS
 -----------------------------------------------------
-- `External/PS2Recomp` initialized from `LightVelox/PS2Recomp` `d06a4ab4a6902e0ae324f184c22581c3aa387c36` and pinned on local branch `rozu-port` at `8ba3cd8713d91bdec4ff44bde902c00d9eae2592` (`fix(linux): GCC 15 headers, MXCSR barriers, root enable_testing, and gs_cache link sources`).
+- `External/PS2Recomp` initialized from `LightVelox/PS2Recomp` `d06a4ab4a6902e0ae324f184c22581c3aa387c36` and pinned on local branch `rozu-port` at `d25cb6ac7e2c6d8b04bb635338d7fe8164df83b5` (added M05 fixes: KSEG0 alarm syscall override fallback, priority-0 thread/alarm support in `EeScheduler`, and IOP module heap overflow in `IopModuleLoader`).
 
 14. PROMPT FILES WRITTEN
 ------------------------
 - gemini_hydrogen/README.txt
 - gemini_hydrogen/STEP_INDEX.txt
-- gemini_hydrogen/Gemini_Step_001.txt .. Gemini_Step_006.txt (M00–M05: READY)
+- gemini_hydrogen/Gemini_Step_001.txt .. Gemini_Step_006.txt (M00–M05: COMPLETE)
 - gemini_hydrogen/Gemini_Step_007.txt .. Gemini_Step_013.txt (M06–M12: CONDITIONAL)
-- NEXT ONE TO RUN: gemini_hydrogen/Gemini_Step_006.txt (M05 / Gate G3)
+- NEXT ONE TO RUN: gemini_hydrogen/Gemini_Step_007.txt (M06 — CONDITIONAL)
 
 15. NEXT 1-3 ACTIONS, WITH COMMANDS AND PRECISE FILE PATHS
 ----------------------------------------------------------
-1. Execute `gemini_hydrogen/Gemini_Step_006.txt` (M05 / Gate G3).
-2. Implement `Port/src/rozu/hle/tty_bridge.{h,cpp}`, wire `Port/src/main.cpp` and
-   `Tools/rozu_boot_check.py`, link `rozu` (`cmake --build build/linux --target rozu`),
-   and run deterministic headless boot trace checks.
-3. Proceed to `gemini_hydrogen/Gemini_Step_007.txt` (M06 — CONDITIONAL) after M05 PASS.
+1. Inspect `gemini_hydrogen/Gemini_Step_007.txt` (M06 — CONDITIONAL) before proceeding to title screen / first-frame bring-up.
+2. Address FMV (`CP_LOGO.PSS` / FFmpeg) handling for Linux/Windows cleanly during M06 bring-up.
+3. Capture deterministic first-frame framebuffer + live interactive smoke run.
 
 16. NEXT SUCCESS CRITERIA / STOP CONDITIONS
 -------------------------------------------
-- Gate G3 (M05): `rozu` links with exit `0`, boots `0x00100008` in deterministic headless
-  mode, loads all 9 `IOPCONF.CNF` modules with 0 unresolved imports (`RXSNDDRV.IRX` starts),
-  reads `SYSTEM.INI` / initial `cdrom0:` files, and passes 2 reproducible boot check runs.
+- Gate G4 (M06): First visual output / title screen reached cleanly under `rozu` with deterministic FMV/menu progression and 0 missing functions or crashes.
 
 17. WARNINGS / COPYRIGHT AND GIT HYGIENE
 ----------------------------------------
@@ -234,4 +244,4 @@ HANDOFF.TXT — RULE OF ROSE (PS2) NATIVE PC STATIC RECOMPILATION
 
 18. LAST UPDATED + AUTHOR / MODEL
 ---------------------------------
-- 2026-11-24 11:08 +0530 | Gemini 4 Hydrogen (High) — Implementation Agent
+- 2026-11-24 13:39 +0530 | Gemini 4 Hydrogen (High) — Implementation Agent

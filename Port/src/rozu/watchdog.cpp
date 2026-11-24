@@ -658,6 +658,27 @@ namespace rozu::watchdog
                             } })
                 .detach();
         }
+        const char *stopFieldsEnv = std::getenv("ROZU_STOP_AFTER_FIELDS");
+        if (stopFieldsEnv && *stopFieldsEnv)
+        {
+            const uint64_t targetFields = std::max<uint64_t>(1ull, std::strtoull(stopFieldsEnv, nullptr, 10));
+            g_running.store(true);
+            ROZU_INFO(Boot, "stop-after-fields armed: target=" << targetFields);
+            std::thread([runtime, targetFields]()
+                        {
+                            while (g_running.load() && runtime && !runtime->isStopRequested())
+                            {
+                                const uint64_t tick = runtime->memory().gs().vsyncTick.load();
+                                if (tick >= targetFields)
+                                {
+                                    ROZU_INFO(Boot, "stopping cleanly after " << tick << " VSync fields");
+                                    runtime->requestStop();
+                                    break;
+                                }
+                                std::this_thread::sleep_for(std::chrono::microseconds(500));
+                            } })
+                .detach();
+        }
         const char *value = std::getenv("ROZU_WATCHDOG");
         if (!value)
         {

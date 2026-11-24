@@ -24,6 +24,7 @@ set(ROZU_HOST_SOURCES
     src/rozu/display.cpp
     src/rozu/function_hooks.cpp
     src/rozu/game_disc.cpp
+    src/rozu/hle/tty_bridge.cpp
     src/rozu/log.cpp
     src/rozu/sha256.cpp
     src/rozu/watchdog.cpp
@@ -126,7 +127,10 @@ endif()
 
 add_executable(rozu src/main.cpp)
 target_include_directories(rozu PRIVATE src "${ROZU_GENERATED_DIR}")
-target_link_libraries(rozu PRIVATE rozu_host_lib rozu_game_code ps2_runtime)
+target_link_libraries(rozu PRIVATE rozu_host_lib ps2_runtime rozu_game_code)
+if(UNIX AND NOT APPLE)
+    target_link_options(rozu PRIVATE -Wl,-u,g_ps2RecompiledFunctionTable)
+endif()
 
 file(GLOB ROZU_VU1_SOURCES CONFIGURE_DEPENDS "${ROZU_GENERATED_DIR}/vu1/*.cpp")
 if(ROZU_VU1_SOURCES)
