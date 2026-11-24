@@ -1,0 +1,94 @@
+{
+  "serial": "SLUS-21448",
+  "title": "Rule of Rose",
+  "region": "NTSC-U",
+  "version": "1.00",
+  "vmode": "NTSC",
+  "disc": {
+    "sector_size": 2048,
+    "sectors": 1656960,
+    "size": 3393454080,
+    "md5": "54e6990f5ed6e0d5b03b6ca7655b7cec",
+    "sha256": "95ff5d1298b1bb19443098852c95c42886605f01fb1ffa8d823ff496598989e9",
+    "system_id": "PLAYSTATION",
+    "publisher_id": "ATLUS USA INC."
+  },
+  "boot_elf": {
+    "disc_path": "SLUS_214.48",
+    "size": 2296472,
+    "sha256": "262efe713ad2432d4e8b2122a5edae9302b7f9eb900537b76beae064a4a91af3",
+    "entry": "0x00100008",
+    "gp": "0x0030FFF0",
+    "text_start": "0x00100000",
+    "text_end": "0x00280E88",
+    "bss_end": "0x00828E94"
+  },
+  "vutext_exclude": {
+    "name": ".vutext",
+    "start": "0x00291230",
+    "end": "0x002953B0",
+    "size": "0x4180"
+  },
+  "required_files": [
+    {
+      "path": "SYSTEM.CNF",
+      "size": 57,
+      "sha256": "93843e865293ca2e06bd849262db9a724615bd16c9628bcaebdf6c14cf7baee1"
+    },
+    {
+      "path": "SYSTEM.INI",
+      "size": 176,
+      "sha256": "7f1f312a02cfb6245e9d51937138a199c75c59c33016c1b869d56071da02f41c"
+    },
+    {
+      "path": "IOPCONF.CNF",
+      "size": 323,
+      "sha256": "699d70c00ffc5afe9ebd4df116d20df4b3a3d88aaf1dd0317bc35edae43eea38"
+    },
+    {
+      "path": "MODULES/IOPRP300.IMG",
+      "size": 275345,
+      "sha256": "02d314464c17c715d7e809297b0aba184173a98616b1fafeac27fe33fc480c82"
+    },
+    {
+      "path": "MODULES/SIO2MAN.IRX",
+      "size": 6641,
+      "sha256": "565ec77e75f174cfddf72c41ccc446c1c07a3d5fb0a2ccfefad337cb8a7d0728"
+    },
+    {
+      "path": "MODULES/SIO2D.IRX",
+      "size": 11289,
+      "sha256": "b07339d0b6ef6021ebb2bd8dba1138f3159b2cdfbf1b29df799694107107d330"
+    },
+    {
+      "path": "MODULES/DBCMAN.IRX",
+      "size": 15653,
+      "sha256": "60bfea7d0877df3af370676666e5f1043b6e71723fab94cdff790c19e75e12e7"
+    },
+    {
+      "path": "MODULES/PAD2/DS1O_D.IRX",
+      "size": 10469,
+      "sha256": "ba65aefc36ef49fc2c31b979aef628cf304561c421b817d3734aee066082937c"
+    },
+    {
+      "path": "MODULES/MCMAN.IRX",
+      "size": 96181,
+      "sha256": "b4df4061f8fdc9c7cf06a329b96227ad6ca69d008df475c1fc4d3e8d06fe3fa4"
+    },
+    {
+      "path": "MODULES/MCSERV.IRX",
+      "size": 7385,
+      "sha256": "5006b0dd650fa416d03a559bc8e3bae8a7ae95be81f3e4f3fd9bd524fa27e000"
+    },
+    {
+      "path": "MODULES/LIBSD.IRX",
+      "size": 30085,
+      "sha256": "94915a3d9673e8a370e144ae493552d5e1f3956bb9ae5bd91e2da5f36c83ce7d"
+    },
+    {
+      "path": "MODULES/RXSNDDRV.IRX",
+      "size": 74005,
+      "sha256": "64d6f26c796fc2599b4fffee94744288d2603cf376041a9f8b25dc538aea67fc"
+    }
+  ]
+}

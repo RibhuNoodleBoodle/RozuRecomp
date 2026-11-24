@@ -1,20 +1,39 @@
+set(ROZU_GENERATED_DIR "${CMAKE_CURRENT_SOURCE_DIR}/generated")
+set(ROZU_PROFILE_JSON "${CMAKE_CURRENT_SOURCE_DIR}/profile/SLUS-21448_v1.00.json")
+set(ROZU_HEADER_INCLUDE_DIR "${ROZU_GENERATED_DIR}")
+
+if(NOT EXISTS "${ROZU_GENERATED_DIR}/rozu_layout_generated.h")
+    set(ROZU_HEADER_INCLUDE_DIR "${CMAKE_CURRENT_BINARY_DIR}/generated_headers")
+    find_package(Python3 COMPONENTS Interpreter REQUIRED)
+    execute_process(
+        COMMAND "${Python3_EXECUTABLE}" "${CMAKE_SOURCE_DIR}/Tools/ror_prepare.py"
+            --profile "${ROZU_PROFILE_JSON}"
+            --emit-header "${ROZU_HEADER_INCLUDE_DIR}/rozu_layout_generated.h"
+            --emit-header-only
+        RESULT_VARIABLE ROZU_HEADER_RESULT
+    )
+    if(NOT ROZU_HEADER_RESULT EQUAL 0)
+        message(FATAL_ERROR "Failed to emit rozu_layout_generated.h from ${ROZU_PROFILE_JSON}")
+    endif()
+endif()
+
 set(ROZU_HOST_SOURCES
     src/rozu/config.cpp
     src/rozu/debug_script.cpp
     src/rozu/diagnostics.cpp
     src/rozu/display.cpp
     src/rozu/function_hooks.cpp
+    src/rozu/game_disc.cpp
     src/rozu/log.cpp
     src/rozu/sha256.cpp
     src/rozu/watchdog.cpp
 )
 
-if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/src/rozu/game_disc.cpp")
-    list(APPEND ROZU_HOST_SOURCES src/rozu/game_disc.cpp)
-endif()
-
 add_library(rozu_host_lib STATIC ${ROZU_HOST_SOURCES})
-target_include_directories(rozu_host_lib PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/src")
+target_include_directories(rozu_host_lib PUBLIC
+    "${CMAKE_CURRENT_SOURCE_DIR}/src"
+    "${ROZU_HEADER_INCLUDE_DIR}"
+)
 target_link_libraries(rozu_host_lib PUBLIC ps2_runtime)
 
 if(WIN32)
@@ -40,7 +59,17 @@ elseif(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
 endif()
 add_test(NAME rozu_host_unit_test COMMAND rozu_host_unit_test)
 
-set(ROZU_GENERATED_DIR "${CMAKE_CURRENT_SOURCE_DIR}/generated")
+add_executable(rozu_disc_test
+    tests/rozu_disc_test.cpp
+    tests/test_function_table_stub.cpp
+)
+target_link_libraries(rozu_disc_test PRIVATE rozu_host_lib)
+if(MSVC)
+    target_compile_options(rozu_disc_test PRIVATE /fp:precise /W3 /utf-8)
+elseif(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+    target_compile_options(rozu_disc_test PRIVATE -fno-fast-math -ffp-contract=off -fno-associative-math -Wall -Wextra)
+endif()
+add_test(NAME rozu_disc_test COMMAND rozu_disc_test)
 
 if(NOT EXISTS "${ROZU_GENERATED_DIR}/register_functions.cpp" OR NOT EXISTS "${ROZU_GENERATED_DIR}/rozu_layout_generated.h")
     message(STATUS

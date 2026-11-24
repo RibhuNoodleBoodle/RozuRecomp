@@ -73,3 +73,5 @@ states/
 *.wav
 rozu.ini
 sotc.ini
+__pycache__/
+*.pyc
